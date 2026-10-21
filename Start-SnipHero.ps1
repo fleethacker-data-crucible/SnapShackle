@@ -1,43 +1,183 @@
-param([int]$Port=8765,[switch]$NoBrowser)
-$ErrorActionPreference='Stop'
-if(-not $IsWindows -and $PSVersionTable.PSEdition -eq 'Core'){throw 'SnipHero desktop capture requires Windows.'}
-$root=Split-Path -Parent $MyInvocation.MyCommand.Path
+<#
+ SnipHero local server. Windows PowerShell 5.1 recommended for native OCR.
+ No elevated privileges, remote listening, installers, or online dependencies.
+#>
+[CmdletBinding()]
+param([ValidateRange(1024,65535)][int]$Port=8765,[switch]$NoBrowser)
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
+    throw 'SnipHero requires a Windows desktop session.'
+}
+$root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Native.ps1')
-$library=Join-Path $env:LOCALAPPDATA 'SnipHero\Captures'
-if(!$env:LOCALAPPDATA){$library=Join-Path $root 'captures'}
+. (Join-Path $root 'modules/Ocr.ps1')
+$library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnipHero\Captures' } else { Join-Path $root 'captures' }
 [void][IO.Directory]::CreateDirectory($library)
-$token=[guid]::NewGuid().ToString('N');$listener=[Net.HttpListener]::new()
-$listener.Prefixes.Add("http://localhost:$Port/");$listener.Start()
-function Reply($c,[byte[]]$bytes,[string]$type='application/json',[int]$status=200){$c.Response.StatusCode=$status;$c.Response.ContentType=$type;$c.Response.Headers.Add('Cache-Control','no-store');$c.Response.Headers.Add('X-Content-Type-Options','nosniff');$c.Response.Headers.Add('Content-Security-Policy',"default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'");$c.Response.ContentLength64=$bytes.Length;$c.Response.OutputStream.Write($bytes,0,$bytes.Length);$c.Response.Close()}
-function Json($c,$o,[int]$status=200){Reply $c ([Text.Encoding]::UTF8.GetBytes(($o|ConvertTo-Json -Depth 12 -Compress))) 'application/json' $status}
-function Body($c,[int]$max=35000000){if($c.Request.ContentLength64 -gt $max){throw 'Payload exceeds size limit'};$m=[IO.MemoryStream]::new();try{$buffer=New-Object byte[] 8192;while(($n=$c.Request.InputStream.Read($buffer,0,$buffer.Length)) -gt 0){$m.Write($buffer,0,$n);if($m.Length -gt $max){throw 'Payload exceeds size limit'}};return ,$m.ToArray()}finally{$m.Dispose()}}
-function PngValid([byte[]]$b){return ($b.Length -gt 24 -and $b[0] -eq 137 -and $b[1] -eq 80 -and $b[2] -eq 78 -and $b[3] -eq 71 -and $b[4] -eq 13)}
-function MetadataPath($name){Join-Path $library ($name+'.meta.json')}
-function ListCaptures($q){$search=([string]$q).ToLowerInvariant();@((Get-ChildItem -LiteralPath $library -Filter '*.png' -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1000 | ForEach-Object { $meta=@{};$mp=MetadataPath $_.Name;if(Test-Path -LiteralPath $mp){try{$meta=Get-Content -LiteralPath $mp -Raw|ConvertFrom-Json}catch{}};[pscustomobject]@{name=$_.Name;bytes=$_.Length;modified=$_.LastWriteTime.ToString('o');tags=@($meta.tags);note=[string]$meta.note} } | Where-Object { !$search -or ($_.name+' '+$_.note+' '+($_.tags -join ' ')).ToLowerInvariant().Contains($search) } | Select-Object -First 250))}
-function SafeName($n){if($n -notmatch '^SnipHero-[a-zA-Z0-9_.-]+\.png$'){throw 'Invalid capture name'};Join-Path $library $n}
+$sessionToken = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+$listener = [Net.HttpListener]::new()
+$listener.Prefixes.Add("http://localhost:$Port/")
+$listener.Start()
+
+function Send-Response($Context, [byte[]]$Bytes, [string]$ContentType='application/json', [int]$Status=200) {
+    $response = $Context.Response
+    $response.StatusCode = $Status
+    $response.ContentType = $ContentType
+    $response.Headers.Add('Cache-Control','no-store')
+    $response.Headers.Add('X-Content-Type-Options','nosniff')
+    $response.Headers.Add('X-Frame-Options','DENY')
+    $response.Headers.Add('Referrer-Policy','no-referrer')
+    $response.Headers.Add('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+    $response.ContentLength64 = $Bytes.Length
+    try { $response.OutputStream.Write($Bytes,0,$Bytes.Length) }
+    finally { $response.Close() }
+}
+function Send-Json($Context, $Payload, [int]$Status=200) {
+    $text = ConvertTo-Json -InputObject $Payload -Depth 12 -Compress
+    Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($text)) 'application/json; charset=utf-8' $Status
+}
+function Read-Body($Context, [int]$MaxBytes=20000000) {
+    if ($Context.Request.ContentLength64 -gt $MaxBytes) { throw 'Request body is too large' }
+    $memory = [IO.MemoryStream]::new()
+    try {
+        $buffer = New-Object byte[] 8192
+        while (($count=$Context.Request.InputStream.Read($buffer,0,$buffer.Length)) -gt 0) {
+            $memory.Write($buffer,0,$count)
+            if ($memory.Length -gt $MaxBytes) { throw 'Request body is too large' }
+        }
+        return ,$memory.ToArray()
+    } finally { $memory.Dispose() }
+}
+function Assert-Png([byte[]]$Bytes) {
+    if ($Bytes.Length -lt 28 -or $Bytes[0] -ne 137 -or $Bytes[1] -ne 80 -or $Bytes[2] -ne 78 -or $Bytes[3] -ne 71 -or
+        $Bytes[4] -ne 13 -or $Bytes[5] -ne 10 -or $Bytes[6] -ne 26 -or $Bytes[7] -ne 10) { throw 'Valid PNG image required' }
+    # IHDR dimensions are network-order at offsets 16 and 20.
+    $width = ([long]$Bytes[16] -shl 24) + ([long]$Bytes[17] -shl 16) + ([long]$Bytes[18] -shl 8) + $Bytes[19]
+    $height = ([long]$Bytes[20] -shl 24) + ([long]$Bytes[21] -shl 16) + ([long]$Bytes[22] -shl 8) + $Bytes[23]
+    if ($width -le 0 -or $height -le 0 -or $width*$height -gt 100000000) { throw 'PNG image dimensions exceed limit' }
+}
+function Get-MetaPath([string]$Name) { Join-Path $library ($Name + '.meta.json') }
+function Get-SafeCapturePath([string]$Name) {
+    if ($Name -notmatch '^SnipHero-[a-zA-Z0-9_.-]+\.png$') { throw 'Invalid capture name' }
+    Join-Path $library $Name
+}
+function Get-CaptureList([string]$Query) {
+    $search = ([string]$Query).ToLowerInvariant()
+    @((Get-ChildItem -LiteralPath $library -File -Filter '*.png' |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 2000 | ForEach-Object {
+          $metadata = @{tags=@();note=''}
+          $mp = Get-MetaPath $_.Name
+          if (Test-Path -LiteralPath $mp) { try { $metadata=Get-Content -LiteralPath $mp -Raw | ConvertFrom-Json } catch {} }
+          [pscustomobject]@{name=$_.Name;bytes=$_.Length;modified=$_.LastWriteTime.ToString('o');tags=@($metadata.tags | Where-Object { $_ });note=[string]$metadata.note}
+        } | Where-Object { -not $search -or ($_.name+' '+$_.note+' '+($_.tags -join ' ')).ToLowerInvariant().Contains($search) } |
+        Select-Object -First 250))
+}
+function Invoke-SnipRequest($Context) {
+    $request=$Context.Request; $path=$request.Url.AbsolutePath; $method=$request.HttpMethod
+    if (-not [Net.IPAddress]::IsLoopback($request.RemoteEndPoint.Address)) { Send-Json $Context @{error='Local clients only'} 403;return }
+    if ($request.Url.Host -ne 'localhost') { Send-Json $Context @{error='Invalid host'} 403;return }
+    $fetchSite=$request.Headers['Sec-Fetch-Site']
+    if ($fetchSite -and $fetchSite -notin @('same-origin','none')) { Send-Json $Context @{error='Cross-site requests denied'} 403;return }
+    $origin=$request.Headers['Origin']
+    if ($origin -and $origin -ne "http://localhost:$Port") { Send-Json $Context @{error='Origin is not authorized'} 403;return }
+    if ($path -eq '/' -and $method -eq 'GET') {
+        $html=[IO.File]::ReadAllText((Join-Path $root 'index.html'))
+        Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
+    }
+    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch)\.js$') {
+        $filename=$Matches[1]+'.js'
+        $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken)
+        Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($source)) 'application/javascript; charset=utf-8';return
+    }
+    if ($method -eq 'GET' -and $path -eq '/assets/styles.css') {
+        Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $root 'assets/styles.css'))) 'text/css; charset=utf-8';return
+    }
+    if ($request.Headers['X-SnipHero-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
+    if ($path -eq '/api/health' -and $method -eq 'GET') {
+        Send-Json $Context @{capture=$true;ocr=(Test-SnipOcr);version='0.5';offline=$true};return
+    }
+    if ($path -eq '/api/screens' -and $method -eq 'GET') {
+        Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
+          @{name=$_.DeviceName;primary=$_.Primary;left=$_.Bounds.Left;top=$_.Bounds.Top;width=$_.Bounds.Width;height=$_.Bounds.Height}
+        })};return
+    }
+    if ($path -eq '/api/windows' -and $method -eq 'GET') { Send-Json $Context @{windows=@(Get-SnipWindows)};return }
+    if ($path -eq '/api/capture' -and $method -eq 'GET') {
+        $q=$request.QueryString
+        $r=[Windows.Forms.SystemInformation]::VirtualScreen
+        if ($q['screen'] -match '^\d+$') {
+            $screens=@([Windows.Forms.Screen]::AllScreens);$i=[int]$q['screen']
+            if ($i -ge $screens.Count) { throw 'Invalid screen' }
+            $r=$screens[$i].Bounds
+        }
+        if ($q['window'] -match '^\d+$') {
+            $w=[SnipHero.Native]::Window([long]$q['window'])
+            $r=[Drawing.Rectangle]::new($w.X,$w.Y,$w.Width,$w.Height)
+        }
+        if ($q['x'] -match '^-?\d+$' -and $q['y'] -match '^-?\d+$' -and $q['w'] -match '^\d+$' -and $q['h'] -match '^\d+$') {
+            $r=[Drawing.Rectangle]::new([int]$q['x'],[int]$q['y'],[int]$q['w'],[int]$q['h'])
+        }
+        Send-Response $Context (Get-SnipRect $r) 'image/png';return
+    }
+    if ($path -eq '/api/region' -and $method -eq 'GET') {
+        $bytes=Get-SnipRegion
+        if ($null -eq $bytes) { Send-Json $Context @{cancelled=$true} 409 }
+        else { Send-Response $Context $bytes 'image/png' }
+        return
+    }
+    if ($path -eq '/api/ocr' -and $method -eq 'POST') {
+        if (-not (Test-SnipOcr)) { Send-Json $Context @{error='Windows native OCR unsupported by this PowerShell environment'} 501;return }
+        $bytes=Read-Body $Context 15000000
+        Assert-Png $bytes
+        $result=Invoke-SnipOcr $bytes
+        Send-Json $Context @{text=$result;engine='Windows.Media.Ocr'};return
+    }
+    if ($path -eq '/api/library' -and $method -eq 'GET') {
+        Send-Json $Context @{items=@(Get-CaptureList $request.QueryString['q'])};return
+    }
+    if ($path -eq '/api/library' -and $method -eq 'POST') {
+        $bytes=Read-Body $Context 25000000;Assert-Png $bytes
+        $name='SnipHero-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8)+'.png'
+        [IO.File]::WriteAllBytes((Join-Path $library $name),$bytes)
+        Send-Json $Context @{name=$name};return
+    }
+    if ($path -match '^/api/library/(SnipHero-[a-zA-Z0-9_.-]+\.png)$') {
+        $name=$Matches[1];$capturePath=Get-SafeCapturePath $name
+        if ($method -eq 'GET') {
+            if (Test-Path -LiteralPath $capturePath) { Send-Response $Context ([IO.File]::ReadAllBytes($capturePath)) 'image/png' }
+            else { Send-Json $Context @{error='Capture not found'} 404 };return
+        }
+        if (-not (Test-Path -LiteralPath $capturePath)) { Send-Json $Context @{error='Capture not found'} 404;return }
+        if ($method -eq 'DELETE') {
+            Remove-Item -LiteralPath $capturePath
+            Remove-Item -LiteralPath (Get-MetaPath $name) -ErrorAction SilentlyContinue
+            Send-Json $Context @{deleted=$true};return
+        }
+        if ($method -eq 'PUT') {
+            $metadata=[Text.Encoding]::UTF8.GetString((Read-Body $Context 65536)) | ConvertFrom-Json
+            $tags=@($metadata.tags | Select-Object -First 20 | ForEach-Object {
+              $v=[string]$_;$v.Substring(0,[Math]::Min(40,$v.Length))
+            })
+            $note=[string]$metadata.note
+            if ($note.Length -gt 2000) { $note=$note.Substring(0,2000) }
+            @{tags=$tags;note=$note} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Get-MetaPath $name) -Encoding UTF8
+            Send-Json $Context @{updated=$true};return
+        }
+    }
+    Send-Json $Context @{error='Route not found'} 404
+}
 $base="http://localhost:$Port/"
-if(!$NoBrowser){Start-Process ($base+'?session='+$token)}
-Write-Host "SnipHero Studio: $base (Ctrl+C to stop)" -ForegroundColor Red
-try{while($listener.IsListening){$c=$listener.GetContext();try{
- if(![Net.IPAddress]::IsLoopback($c.Request.RemoteEndPoint.Address)){Json $c @{error='Local requests only'} 403;continue}
- $p=$c.Request.Url.AbsolutePath;$method=$c.Request.HttpMethod
- if($p -eq '/' -and $method -eq 'GET'){$html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SESSION_TOKEN__',$token);Reply $c ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';continue}
- if($p -match '^/assets/(editor|studio|gif)\.js$' -and $method -eq 'GET'){$asset=$Matches[1];$script=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$asset+'.js'))).Replace('__SESSION_TOKEN__',$token);Reply $c ([Text.Encoding]::UTF8.GetBytes($script)) 'application/javascript; charset=utf-8';continue}
- if($c.Request.Headers['X-SnipHero-Token'] -ne $token){Json $c @{error='Invalid session'} 403;continue}
- if($p -eq '/api/screens' -and $method -eq 'GET'){Json $c @{screens=@([Windows.Forms.Screen]::AllScreens|ForEach-Object {@{name=$_.DeviceName;primary=$_.Primary;left=$_.Bounds.Left;top=$_.Bounds.Top;width=$_.Bounds.Width;height=$_.Bounds.Height}})};continue}
- if($p -eq '/api/windows' -and $method -eq 'GET'){Json $c @{windows=@(Get-SnipWindows)};continue}
- if($p -eq '/api/capture' -and $method -eq 'GET'){$q=$c.Request.QueryString;$r=[Windows.Forms.SystemInformation]::VirtualScreen
-  if($q['screen'] -match '^\d+$'){$screens=@([Windows.Forms.Screen]::AllScreens);$i=[int]$q['screen'];if($i -ge $screens.Count){throw 'Invalid screen'};$r=$screens[$i].Bounds}
-  if($q['window'] -match '^\d+$'){$w=[SnipHero.Native]::Window([long]$q['window']);$r=[Drawing.Rectangle]::new($w.X,$w.Y,$w.Width,$w.Height)}
-  if($q['x'] -match '^-?\d+$' -and $q['y'] -match '^-?\d+$' -and $q['w'] -match '^\d+$' -and $q['h'] -match '^\d+$'){$r=[Drawing.Rectangle]::new([int]$q['x'],[int]$q['y'],[int]$q['w'],[int]$q['h'])}
-  Reply $c (Get-SnipRect $r) 'image/png';continue}
- if($p -eq '/api/region' -and $method -eq 'GET'){$b=Get-SnipRegion;if(!$b){Json $c @{cancelled=$true} 409}else{Reply $c $b 'image/png'};continue}
- if($p -eq '/api/library' -and $method -eq 'GET'){Json $c @{items=@(ListCaptures $c.Request.QueryString['q'])};continue}
- if($p -eq '/api/library' -and $method -eq 'POST'){$bytes=Body $c;if(!(PngValid $bytes)){throw 'PNG required'};$name='SnipHero-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+[guid]::NewGuid().ToString('N').Substring(0,6)+'.png';[IO.File]::WriteAllBytes((Join-Path $library $name),$bytes);Json $c @{name=$name};continue}
- if($p -match '^/api/library/(SnipHero-[a-zA-Z0-9_.-]+\.png)$'){$name=$Matches[1];$f=SafeName $name
-  if($method -eq 'GET'){if(!(Test-Path -LiteralPath $f)){Json $c @{error='Missing capture'} 404}else{Reply $c ([IO.File]::ReadAllBytes($f)) 'image/png'};continue}
-  if($method -eq 'DELETE'){Remove-Item -LiteralPath $f -ErrorAction Stop;$mp=MetadataPath $name;Remove-Item -LiteralPath $mp -ErrorAction SilentlyContinue;Json $c @{deleted=$true};continue}
-  if($method -eq 'PUT'){$data=[Text.Encoding]::UTF8.GetString((Body $c 65536))|ConvertFrom-Json;$tags=@($data.tags|Select-Object -First 20|ForEach-Object{([string]$_).Substring(0,[Math]::Min(40,([string]$_).Length))});$note=([string]$data.note);if($note.Length -gt 2000){$note=$note.Substring(0,2000)};@{tags=$tags;note=$note}|ConvertTo-Json|Set-Content -LiteralPath (MetadataPath $name) -Encoding UTF8;Json $c @{updated=$true};continue}}
- Json $c @{error='Route not found'} 404
-}catch{Write-Warning $_;try{if($c.Response.OutputStream.CanWrite){Json $c @{error=$_.Exception.Message} 500}}catch{}}}}
-finally{$listener.Stop();$listener.Close()}
+Write-Host "SnipHero Studio v0.5 local server: $base" -ForegroundColor Red
+Write-Host 'Press Ctrl+C in this console to stop.'
+if (-not $NoBrowser) { Start-Process $base }
+try {
+    while ($listener.IsListening) {
+        $context=$listener.GetContext()
+        try { Invoke-SnipRequest $context }
+        catch {
+            Write-Warning ("Request failed: " + $_.Exception.Message)
+            try { if ($context.Response.OutputStream.CanWrite) { Send-Json $context @{error=$_.Exception.Message} 500 } } catch {}
+        }
+    }
+} finally {
+    $listener.Stop();$listener.Close()
+}

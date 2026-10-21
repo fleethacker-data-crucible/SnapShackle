@@ -1,16 +1,27 @@
-/* Small offline animated GIF89a encoder. 3-3-2 RGB quantization and GIF LZW. */
-window.SnipGif={encode(frames,width,height,delay=120){
- const bytes=[],u8=n=>bytes.push(n&255),u16=n=>{u8(n);u8(n>>8)},str=s=>{for(const c of s)u8(c.charCodeAt(0))};
- str('GIF89a');u16(width);u16(height);u8(0xf7);u8(0);u8(0);
- for(let i=0;i<256;i++){u8(((i>>5)&7)*255/7);u8(((i>>2)&7)*255/7);u8((i&3)*85)}
- u8(0x21);u8(0xff);u8(11);str('NETSCAPE2.0');u8(3);u8(1);u16(0);u8(0);
- for(const rgba of frames){u8(0x21);u8(0xf9);u8(4);u8(0);u16(Math.max(2,Math.round(delay/10)));u8(0);u8(0);u8(0x2c);u16(0);u16(0);u16(width);u16(height);u8(0);u8(8);
-  const indices=new Uint8Array(width*height);for(let i=0;i<indices.length;i++){let p=i*4;indices[i]=(rgba[p]&224)|((rgba[p+1]&224)>>3)|(rgba[p+2]>>6)}
-  const min=8,clear=256,end=257;let dict=new Map(),next=258,size=9,acc=0,bits=0,out=[];
-  function emit(code){acc|=code<<bits;bits+=size;while(bits>=8){out.push(acc&255);acc>>>=8;bits-=8}}
-  function reset(){dict.clear();next=258;size=9;emit(clear)}
-  reset();let prev=String(indices[0]);for(let i=1;i<indices.length;i++){let v=indices[i],key=prev+','+v;if(dict.has(key)){prev=key;continue}let code=prev.includes(',')?dict.get(prev):Number(prev);emit(code);if(next<4096){dict.set(key,next++);if(next===(1<<size)&&size<12)size++}else{reset()}prev=String(v)}emit(prev.includes(',')?dict.get(prev):Number(prev));emit(end);if(bits)out.push(acc&255);
-  for(let i=0;i<out.length;i+=255){let part=out.slice(i,i+255);u8(part.length);for(let v of part)u8(v)}u8(0);
+/* Dependency-free GIF89a encoder. Fixed-width LZW packets with periodic clear codes.
+   A conservative approach: larger than optimized GIFs, but valid across decoders. */
+(() => {
+'use strict';
+window.SnipGif={encode(frames,width,height,delay=150){
+ if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>640||height>480||!frames.length||frames.length>100)throw Error('GIF dimensions or frame count exceed safe limits');
+ const parts=[],write=n=>parts.push(n&255),write16=n=>{write(n);write(n>>>8)},writeStr=s=>{for(let i=0;i<s.length;i++)write(s.charCodeAt(i))};
+ writeStr('GIF89a');write16(width);write16(height);write(0xF7);write(0);write(0);
+ for(let i=0;i<256;i++){write(Math.round(((i>>5)&7)*255/7));write(Math.round(((i>>2)&7)*255/7));write((i&3)*85)}
+ write(0x21);write(0xFF);write(11);writeStr('NETSCAPE2.0');write(3);write(1);write16(0);write(0);
+ for(const rgba of frames){
+  if(rgba.length!==width*height*4)throw Error('Incorrect GIF frame dimensions');
+  write(0x21);write(0xF9);write(4);write(0);write16(Math.max(2,Math.round(delay/10)));write(0);write(0);
+  write(0x2C);write16(0);write16(0);write16(width);write16(height);write(0);write(8);
+  let result=[],acc=0,bits=0;const emit=code=>{acc|=(code<<bits);bits+=9;while(bits>=8){result.push(acc&255);acc>>>=8;bits-=8}};
+  const clear=256,end=257;emit(clear);
+  for(let i=0;i<width*height;i++){
+   // Clear before the decoder's dictionary reaches a 10-bit code width.
+   if(i!==0&&i%200===0)emit(clear);
+   const p=i*4;emit((rgba[p]&0xE0)|((rgba[p+1]&0xE0)>>>3)|(rgba[p+2]>>>6));
+  }
+  emit(end);if(bits)result.push(acc&255);
+  for(let pos=0;pos<result.length;pos+=255){const block=result.slice(pos,pos+255);write(block.length);for(let v of block)write(v)}write(0);
  }
- u8(0x3b);return new Blob([new Uint8Array(bytes)],{type:'image/gif'});
+ write(0x3B);return new Blob([Uint8Array.from(parts)],{type:'image/gif'});
 }};
+})();
