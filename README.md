@@ -1,4 +1,4 @@
-# SnipHero Studio v0.5
+# SnipHero Studio v0.6
 
 A **local-first Windows screenshot and annotation studio** using native Windows capture, a built-in PowerShell HTTP host, and an offline browser UI. Designed to run without Node, Python, npm, CDN, a package installer, or administrator rights on an authorized Windows workstation.
 
@@ -6,14 +6,30 @@ A **local-first Windows screenshot and annotation studio** using native Windows 
 
 ![Studio smoke-test preview](docs/studio-preview.png)
 
-## Run on Windows
+## Run on Windows (Nautilus-friendly launch pattern)
 
-1. Extract all files while preserving `assets/` and `modules/`.
-2. From a regular, authorized PowerShell session, change to the extracted directory and run `./Start-SnipHero.ps1` (Windows PowerShell 5.1 is recommended). If your organization blocks script execution, follow your approved IT procedures; SnipHero does **not** need policy bypasses or elevated privileges.
-3. The browser should open `http://localhost:8765/` automatically. If it does not, open that address manually. Keep the PowerShell console running; press Ctrl+C to stop the local server.
-4. Captures are stored under `%LOCALAPPDATA%\SnipHero\Captures`. Preferences stay in the browser profile (`localStorage`); nothing is uploaded to the cloud by SnipHero.
+1. Extract **the entire archive**, retaining `assets/`, `modules/`, and `tests/`.
+2. Double-click **`SnipHero.bat`** to launch the GUI. This is the **only batch launcher**; `Start-SnipHero.ps1` is the direct PowerShell/terminal entry point.
+3. SnipHero first tries **127.0.0.1:8765**. If Keystone, Cascade, ARC, or another application already uses it, SnipHero **binds an available loopback port** and opens its browser at the **actual chosen address**. Other servers are never stopped, modified, or taken over. Use the URL printed in the console if the browser does not launch automatically.
+4. Keep the terminal open while using SnipHero. Press Ctrl+C to stop SnipHero alone.
 
-The PowerShell host uses `HttpListener` bound to `localhost`, randomly generated session tokens for API requests, and origin/host checks. This is **single-user local software**, not an enterprise network service or authentication boundary against programs already running as your user. Port is configurable with `-Port 8766` and browser auto-launch can be disabled with `-NoBrowser`.
+### Why the batch launcher exists
+
+`SnipHero.bat` uses **Windows PowerShell 5.1** with `-STA -NoProfile -NoLogo -ExecutionPolicy Bypass`. The flag is explicitly visible in the launcher and **only applies to the new PowerShell process**. It does **not** elevate privileges, change machine/user execution-policy configuration, override domain Group Policy, or defeat AppLocker, WDAC, endpoint protection, or enterprise restrictions. Only launch scripts in an environment in which you are authorized to do so. If organizational controls block it, contact IT for an approved route rather than defeating those controls.
+
+SnipHero's HTTP server now uses a **raw `TcpListener` bound exclusively to 127.0.0.1** instead of `HttpListener`. It therefore does not depend on Windows HTTP.sys URL reservations / URLACL admin setup. The default port is a preference, not a hard requirement. The app tries 100 successive ports and finally allows Windows to allocate an ephemeral loopback port if those are unavailable. Port binding is atomic; there is no separate "check if available" race. The UI uses relative API URLs, so screenshots, OCR, and the library automatically target the chosen port.
+
+### Options and diagnostics
+
+```bat
+SnipHero.bat -NoBrowser
+SnipHero.bat -Port 9000
+SnipHero.bat -Diagnostics
+```
+
+`-NoBrowser` keeps the host running and prints its URL. `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts SnipHero separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
+
+Captures remain under `%LOCALAPPDATA%\SnipHero\Captures`. Browser settings are stored locally (`localStorage`). Screenshot bytes and OCR data are not transmitted off the computer by SnipHero. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
 
 ## Implemented functionality
 
@@ -48,6 +64,8 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 
 - `node --check assets/editor.js` (also check `studio.js`, `gif.js`, and `stitch.js`)
 - `python tests/static_check.py` checks source structure/routes and UI wiring.
+- `python tests/launcher_static_check.py` verifies launcher settings, TCP adapter, and dynamic port propagation.
+- `tests/windows_port_smoke.ps1` verifies localhost collision behavior on Windows 5.1 (requires user-authorized runtime).
 - `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
@@ -57,7 +75,9 @@ Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR 
 ## Project structure
 
 ```text
+SnipHero.bat                Windows GUI launcher (process-scoped PowerShell flags)
 Start-SnipHero.ps1          Local HTTP host, capture API and library
+modules/LocalHttp.ps1      Loopback TCP / bounded HTTP adapter and dynamic port binding
 modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 index.html                 Studio layout
