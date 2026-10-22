@@ -39,17 +39,63 @@ namespace SnipHero {
 }
 try { [SnipHero.Native]::SetProcessDPIAware() | Out-Null } catch {}
 function Get-SnipWindows { @([SnipHero.Native]::Windows() | Select-Object -First 250) }
+# Timings describe capture/encoding only. Region selection time is recorded separately.
+$script:SnipCaptureStats = @{ acquireMs=0; encodeMs=0; selectionMs=0 }
+function Convert-SnipBitmapToPng([Drawing.Bitmap]$Bitmap, [double]$AcquisitionMs=0, [double]$SelectionMs=0) {
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    $memory=[IO.MemoryStream]::new()
+    try {
+        $Bitmap.Save($memory,[Drawing.Imaging.ImageFormat]::Png)
+        $result=$memory.ToArray()
+        $timer.Stop()
+        $script:SnipCaptureStats=@{ acquireMs=[math]::Round($AcquisitionMs,1); encodeMs=[math]::Round($timer.Elapsed.TotalMilliseconds,1); selectionMs=[math]::Round($SelectionMs,1) }
+        return ,$result
+    } finally { $memory.Dispose() }
+}
 function Get-SnipRect([Drawing.Rectangle]$rect) {
- if ($rect.Width -le 0 -or $rect.Height -le 0 -or ([long]$rect.Width * $rect.Height) -gt 120000000) { throw 'Invalid capture dimensions' }
- $bmp=[Drawing.Bitmap]::new($rect.Width,$rect.Height)
- $gfx=[Drawing.Graphics]::FromImage($bmp)
- try { $gfx.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size);$mem=[IO.MemoryStream]::new();try {$bmp.Save($mem,[Drawing.Imaging.ImageFormat]::Png);return ,$mem.ToArray()}finally{$mem.Dispose()} }finally{$gfx.Dispose();$bmp.Dispose()}
+    if ($rect.Width -le 0 -or $rect.Height -le 0 -or ([long]$rect.Width * $rect.Height) -gt 120000000) {
+        throw 'Invalid capture dimensions'
+    }
+    $bmp=[Drawing.Bitmap]::new($rect.Width,$rect.Height)
+    $gfx=[Drawing.Graphics]::FromImage($bmp)
+    try {
+        $timer=[Diagnostics.Stopwatch]::StartNew()
+        $gfx.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size,[Drawing.CopyPixelOperation]::SourceCopy)
+        $timer.Stop()
+        return Convert-SnipBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
+    } finally { $gfx.Dispose();$bmp.Dispose() }
+}
+function Copy-SnipBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area) {
+    if ($Area.Width -le 0 -or $Area.Height -le 0 -or ([long]$Area.Width*$Area.Height) -gt 120000000 -or
+        $Area.X -lt 0 -or $Area.Y -lt 0 -or $Area.Right -gt $Original.Width -or $Area.Bottom -gt $Original.Height) {
+        throw 'Selection outside captured image'
+    }
+    # GDI+ rectangle clone is a lossless pixel copy and avoids resampling.
+    return $Original.Clone($Area,$Original.PixelFormat)
 }
 function Get-SnipRegion {
- $virtual=[Windows.Forms.SystemInformation]::VirtualScreen
- $background=[Drawing.Bitmap]::new($virtual.Width,$virtual.Height)
- $gfx=[Drawing.Graphics]::FromImage($background)
- try {$gfx.CopyFromScreen($virtual.Left,$virtual.Top,0,0,$background.Size)}finally{$gfx.Dispose()}
- $overlay=[SnipHero.RegionOverlay]::new($virtual,$background)
- try {if($overlay.ShowDialog() -eq [Windows.Forms.DialogResult]::OK -and $overlay.Accepted){return Get-SnipRect $overlay.Selection};return $null}finally{$overlay.Dispose();$background.Dispose()}
+    $virtual=[Windows.Forms.SystemInformation]::VirtualScreen
+    if ($virtual.Width -le 0 -or $virtual.Height -le 0 -or ([long]$virtual.Width*$virtual.Height) -gt 120000000) { throw 'Desktop exceeds capture limits' }
+    $background=[Drawing.Bitmap]::new($virtual.Width,$virtual.Height)
+    $gfx=[Drawing.Graphics]::FromImage($background)
+    try {
+        $timer=[Diagnostics.Stopwatch]::StartNew()
+        $gfx.CopyFromScreen($virtual.Left,$virtual.Top,0,0,$background.Size,[Drawing.CopyPixelOperation]::SourceCopy)
+        $timer.Stop()
+        $acquireMs=$timer.Elapsed.TotalMilliseconds
+    } finally { $gfx.Dispose() }
+    try {
+        $overlay=[SnipHero.RegionOverlay]::new($virtual,$background)
+        $timer=[Diagnostics.Stopwatch]::StartNew()
+        try {
+            # Do not re-capture the display after selection. Crop the original snapshot;
+            # it avoids a second full-screen BitBlt and cannot capture the overlay.
+            if ($overlay.ShowDialog() -ne [Windows.Forms.DialogResult]::OK -or -not $overlay.Accepted) { return $null }
+            $selected=$overlay.Selection
+        } finally { $timer.Stop();$overlay.Dispose() }
+        $region=[Drawing.Rectangle]::new($selected.X-$virtual.Left,$selected.Y-$virtual.Top,$selected.Width,$selected.Height)
+        $cropped=Copy-SnipBitmapArea $background $region
+        try { return Convert-SnipBitmapToPng $cropped $acquireMs $timer.Elapsed.TotalMilliseconds }
+        finally { $cropped.Dispose() }
+    } finally { $background.Dispose() }
 }

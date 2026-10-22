@@ -1,4 +1,4 @@
-# SnipHero Studio v0.6
+# SnipHero Studio v0.7 — Capture Latency Update
 
 A **local-first Windows screenshot and annotation studio** using native Windows capture, a built-in PowerShell HTTP host, and an offline browser UI. Designed to run without Node, Python, npm, CDN, a package installer, or administrator rights on an authorized Windows workstation.
 
@@ -31,6 +31,19 @@ SnipHero.bat -Diagnostics
 
 Captures remain under `%LOCALAPPDATA%\SnipHero\Captures`. Browser settings are stored locally (`localStorage`). Screenshot bytes and OCR data are not transmitted off the computer by SnipHero. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
 
+## Screenshot latency improvements (v0.7)
+
+- **Single desktop snapshot for region capture:** region selection now crops the **already-captured original bitmap**. The previous build called `CopyFromScreen` *again* after selection, adding latency and risking capture of the overlay or newer screen state. Crop uses lossless GDI+ `Bitmap.Clone` and preserves native resolution.
+- **Direct browser image loading:** screenshots travel as PNG `Blob` objects, without converting every capture into a large Base64 data URL. The editor retains compressed blob URLs for undo/redo; only explicit editable-project exports embed an image as a portable data URL.
+- **Accelerated canvas:** the editor no longer opts into the CPU-oriented `willReadFrequently` canvas mode; layer buttons are no longer rebuilt on every pointer move.
+- **Nonblocking automatic save:** the new screenshot is shown before library disk I/O. When the source is a PNG, autosave writes its original bytes rather than re-encoding an already-clean canvas.
+- **Bounded, on-demand thumbnails:** the library now loads small 216×136 JPEG thumbnails with a bounded in-memory server cache. Browser thumbnail requests use `IntersectionObserver` and a maximum of two concurrent fetches, keeping image browsing from competing with capture traffic. The original saved PNGs are unchanged, and cached thumbnails are never persisted to disk.
+- **Less server copying:** HTTP request headers use a buffered reader. PNG responses are written directly rather than copying large byte arrays through a separate response `MemoryStream`.
+
+After a capture, the bottom status bar and **Workflows → Diagnostics** show a per-stage timing breakdown. `native` measures Windows screen acquisition, `PNG` measures encoding, `request/transfer` includes the server processing and transmission, and `browser display` measures image decoding and first editor render. For region selection, total request time necessarily includes **the time spent dragging the selection**; that user interaction is shown separately.
+
+**No precise speedup percentage is claimed:** only browser integration tests ran in the build environment. GDI capture and socket performance must be measured on Windows / Nautilus. Run `tests/windows_capture_perf.ps1 -DesktopCapture` in an authorized PowerShell 5.1 STA session to benchmark the native stages.
+
 ## Implemented functionality
 
 | Area | What works | Caveats |
@@ -44,7 +57,7 @@ Captures remain under `%LOCALAPPDATA%\SnipHero\Captures`. Browser settings are s
 | Animated GIF | Offline dependency-free encoder; 640×480 max, 100 frames | 3-3-2 limited palette, unoptimized file sizes; tested for valid GIF decoding |
 | Long screenshots | Automatic overlap-aware stitching of multiple screenshots; optional browser shared-screen sampling while **you scroll the target** | Not an autonomous scroll driver for arbitrary Windows apps; sticky headers/transitions can reduce stitching quality |
 | OCR | Attempts Windows.Media.Ocr on PowerShell 5.1 where WinRT is available; tries browser TextDetector otherwise | Windows integration is **experimental and untested on a real Windows system**; browser API often missing |
-| UI | Offline red/black workspace, Library/Layers/Workflows tabs, editable layers, status diagnostics, common focused-tab keyboard shortcuts | Not yet a fully audited accessible enterprise desktop application |
+| UI | Offline red/black workspace, Library/Layers/Workflows tabs, editable layers, status diagnostics with per-stage capture timings, common focused-tab keyboard shortcuts | Not yet a fully audited accessible enterprise desktop application |
 
 ### Redaction safety
 
@@ -66,6 +79,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/static_check.py` checks source structure/routes and UI wiring.
 - `python tests/launcher_static_check.py` verifies launcher settings, TCP adapter, and dynamic port propagation.
 - `tests/windows_port_smoke.ps1` verifies localhost collision behavior on Windows 5.1 (requires user-authorized runtime).
+- `tests/windows_capture_perf.ps1 -DesktopCapture` verifies pixel-perfect source-bitmap crops and prints native capture and PNG encoding timings on Windows.
 - `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.

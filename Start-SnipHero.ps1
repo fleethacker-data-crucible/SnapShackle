@@ -51,8 +51,16 @@ function Send-Response($Context, [byte[]]$Bytes, [string]$ContentType='applicati
     $response.Headers.Add('Referrer-Policy','no-referrer')
     $response.Headers.Add('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
     $response.ContentLength64 = $Bytes.Length
-    try { $response.OutputStream.Write($Bytes,0,$Bytes.Length) }
+    try { $response.SetBody($Bytes) }
     finally { $response.Close() }
+}
+function Add-CaptureTimingHeaders($Context) {
+    $stats=$script:SnipCaptureStats
+    if ($null -eq $stats) { return }
+    $capture=[math]::Round([double]$stats.acquireMs,1).ToString([Globalization.CultureInfo]::InvariantCulture)
+    $encode=[math]::Round([double]$stats.encodeMs,1).ToString([Globalization.CultureInfo]::InvariantCulture)
+    $selection=[math]::Round([double]$stats.selectionMs,1).ToString([Globalization.CultureInfo]::InvariantCulture)
+    $Context.Response.Headers.Add('Server-Timing',"acquire;dur=$capture, encode;dur=$encode, selection;dur=$selection")
 }
 function Send-Json($Context, $Payload, [int]$Status=200) {
     $text = ConvertTo-Json -InputObject $Payload -Depth 12 -Compress
@@ -94,6 +102,43 @@ function Get-CaptureList([string]$Query) {
         } | Where-Object { -not $search -or ($_.name+' '+$_.note+' '+($_.tags -join ' ')).ToLowerInvariant().Contains($search) } |
         Select-Object -First 250))
 }
+# Keep a small, bounded in-memory thumbnail cache: no persistent duplicate screenshots.
+$script:thumbnailCache = [Collections.Generic.Dictionary[string,byte[]]]::new([StringComparer]::Ordinal)
+$script:thumbnailOrder = [Collections.Generic.Queue[string]]::new()
+function Get-SnipThumbnail([string]$Name) {
+    $path=Get-SafeCapturePath $Name
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    if ($script:thumbnailCache.ContainsKey($Name)) { return ,$script:thumbnailCache[$Name] }
+    $source=[Drawing.Image]::FromFile($path)
+    try {
+        if ($source.Width -le 0 -or $source.Height -le 0 -or ([long]$source.Width*$source.Height) -gt 100000000) { throw 'Invalid thumbnail source' }
+        $target=[Drawing.Bitmap]::new(216,136)
+        $gfx=[Drawing.Graphics]::FromImage($target)
+        try {
+            $gfx.Clear([Drawing.Color]::FromArgb(24,29,39))
+            $gfx.InterpolationMode=[Drawing.Drawing2D.InterpolationMode]::HighQualityBilinear
+            $scale=[math]::Min(216.0/$source.Width,136.0/$source.Height)
+            $width=[math]::Max(1,[int]($source.Width*$scale))
+            $height=[math]::Max(1,[int]($source.Height*$scale))
+            $left=[int]((216-$width)/2)
+            $top=[int]((136-$height)/2)
+            $gfx.DrawImage($source,[Drawing.Rectangle]::new($left,$top,$width,$height))
+            $m=[IO.MemoryStream]::new()
+            try { $target.Save($m,[Drawing.Imaging.ImageFormat]::Jpeg);$bytes=$m.ToArray() }
+            finally { $m.Dispose() }
+        } finally { $gfx.Dispose();$target.Dispose() }
+    } finally { $source.Dispose() }
+    # Hard bounds: 64 recent 216x136 thumbnails, maximum 256 KiB per entry.
+    if ($bytes.Length -le 262144) {
+        while ($script:thumbnailCache.Count -ge 64 -or $script:thumbnailOrder.Count -ge 64) {
+            $old=$script:thumbnailOrder.Dequeue()
+            [void]$script:thumbnailCache.Remove($old)
+        }
+        $script:thumbnailCache[$Name]=$bytes
+        $script:thumbnailOrder.Enqueue($Name)
+    }
+    return ,$bytes
+}
 function Invoke-SnipRequest($Context) {
     $request=$Context.Request; $path=$request.Url.AbsolutePath; $method=$request.HttpMethod
     if (-not [Net.IPAddress]::IsLoopback($request.RemoteEndPoint.Address)) { Send-Json $Context @{error='Local clients only'} 403;return }
@@ -116,7 +161,7 @@ function Invoke-SnipRequest($Context) {
     }
     if ($request.Headers['X-SnipHero-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;ocr=(Test-SnipOcr);version='0.6';offline=$true};return
+        Send-Json $Context @{capture=$true;ocr=(Test-SnipOcr);version='0.7';offline=$true};return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
         Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
@@ -139,12 +184,14 @@ function Invoke-SnipRequest($Context) {
         if ($q['x'] -match '^-?\d+$' -and $q['y'] -match '^-?\d+$' -and $q['w'] -match '^\d+$' -and $q['h'] -match '^\d+$') {
             $r=[Drawing.Rectangle]::new([int]$q['x'],[int]$q['y'],[int]$q['w'],[int]$q['h'])
         }
-        Send-Response $Context (Get-SnipRect $r) 'image/png';return
+        $png=Get-SnipRect $r
+        Add-CaptureTimingHeaders $Context
+        Send-Response $Context $png 'image/png';return
     }
     if ($path -eq '/api/region' -and $method -eq 'GET') {
         $bytes=Get-SnipRegion
         if ($null -eq $bytes) { Send-Json $Context @{cancelled=$true} 409 }
-        else { Send-Response $Context $bytes 'image/png' }
+        else { Add-CaptureTimingHeaders $Context; Send-Response $Context $bytes 'image/png' }
         return
     }
     if ($path -eq '/api/ocr' -and $method -eq 'POST') {
@@ -163,6 +210,12 @@ function Invoke-SnipRequest($Context) {
         [IO.File]::WriteAllBytes((Join-Path $library $name),$bytes)
         Send-Json $Context @{name=$name};return
     }
+    if ($method -eq 'GET' -and $path -match '^/api/thumb/(SnipHero-[a-zA-Z0-9_.-]+\.png)$') {
+        $thumbnail=Get-SnipThumbnail $Matches[1]
+        if ($null -eq $thumbnail) { Send-Json $Context @{error='Missing capture'} 404 }
+        else { Send-Response $Context $thumbnail 'image/jpeg' }
+        return
+    }
     if ($path -match '^/api/library/(SnipHero-[a-zA-Z0-9_.-]+\.png)$') {
         $name=$Matches[1];$capturePath=Get-SafeCapturePath $name
         if ($method -eq 'GET') {
@@ -172,6 +225,8 @@ function Invoke-SnipRequest($Context) {
         if (-not (Test-Path -LiteralPath $capturePath)) { Send-Json $Context @{error='Capture not found'} 404;return }
         if ($method -eq 'DELETE') {
             Remove-Item -LiteralPath $capturePath
+            # Invalidate cached preview when its original is deleted.
+            if ($script:thumbnailCache.ContainsKey($name)) { [void]$script:thumbnailCache.Remove($name) }
             Remove-Item -LiteralPath (Get-MetaPath $name) -ErrorAction SilentlyContinue
             Send-Json $Context @{deleted=$true};return
         }
@@ -189,7 +244,7 @@ function Invoke-SnipRequest($Context) {
     Send-Json $Context @{error='Route not found'} 404
 }
 $base="http://127.0.0.1:$Port/"
-Write-Host "SnipHero Studio v0.6 local server: $base" -ForegroundColor Red
+Write-Host "SnipHero Studio v0.7 local server: $base" -ForegroundColor Red
 Write-Host 'Press Ctrl+C in this console to stop.'
 if (-not $NoBrowser) {
     try { Start-Process $base }
