@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['SnipHero.bat','Start-SnipHero.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','index.html','assets/editor.js','assets/studio.js','assets/gif.js','assets/stitch.js','assets/styles.css','README.md']
+required=['SnipHero.bat','Start-SnipHero.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','index.html','assets/editor.js','assets/studio.js','assets/gif.js','assets/stitch.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -17,3 +17,16 @@ for control in ['getDisplayMedia','MediaRecorder','SnipGif.encode','SnipStitch.s
 assert 'Get-SnipRegion' in (ROOT/'modules/Native.ps1').read_text()
 assert 'Windows.Media.Ocr' in (ROOT/'modules/Ocr.ps1').read_text()
 print('PASS: source structure and route/feature wiring (static only)')
+
+# Performance feature wiring: never recapture screen after the region overlay.
+native=(ROOT/'modules/Native.ps1').read_text()
+region=native.split('function Get-SnipRegion {',1)[1]
+assert region.count('CopyFromScreen(')==1, 'Region capture must acquire the desktop exactly once'
+assert 'Copy-SnipBitmapArea $background $region' in region
+assert 'return $Original.Clone($Area,$Original.PixelFormat)' in native
+assert '/api/thumb/' in host and 'Get-SnipThumbnail' in host
+assert "Server-Timing" in host and "SetBody($Bytes)" in host
+assert "BufferedStream" in (ROOT/'modules/LocalHttp.ps1').read_text()
+assert "await loadImage(blob,'Desktop capture')" in studio
+assert 'portableProject()' in studio and 'IntersectionObserver' in studio
+print('PASS: capture latency architecture, timing hooks and thumbnail cache')
