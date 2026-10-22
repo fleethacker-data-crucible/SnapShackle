@@ -83,16 +83,25 @@ namespace SnipHero.Transport {
         public NameValueCollection Headers=new NameValueCollection(StringComparer.OrdinalIgnoreCase);
         public long ContentLength64;
         public MemoryStream OutputStream=new MemoryStream();
+        byte[] immediateBody=null;
+        // Avoid writing large PNG responses into MemoryStream and then cloning them via ToArray().
+        public void SetBody(byte[] body) { immediateBody=body ?? new byte[0]; }
         public Response(NetworkStream s) { stream=s; }
         public void Close() {
             if (closed) return;
             closed=true;
-            byte[] bytes=OutputStream.ToArray();
+            ArraySegment<byte> buffered;
+            byte[] body;
+            int length;
+            int offset;
+            if (immediateBody!=null) { body=immediateBody; length=body.Length; offset=0; }
+            else if (OutputStream.TryGetBuffer(out buffered)) { body=buffered.Array; offset=buffered.Offset; length=buffered.Count; }
+            else { body=OutputStream.ToArray(); length=body.Length; offset=0; }
             string reason=StatusCode==200?"OK":StatusCode==400?"Bad Request":StatusCode==403?"Forbidden":StatusCode==404?"Not Found":StatusCode==409?"Conflict":StatusCode==413?"Payload Too Large":StatusCode==501?"Not Implemented":"Internal Server Error";
             StringBuilder sb=new StringBuilder();
             sb.Append("HTTP/1.1 ").Append(StatusCode).Append(' ').Append(reason).Append("\r\n");
             sb.Append("Connection: close\r\nContent-Type: ").Append(ContentType).Append("\r\n");
-            sb.Append("Content-Length: ").Append(bytes.Length.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+            sb.Append("Content-Length: ").Append(length.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             foreach (string key in Headers.AllKeys) {
                 foreach (string value in Headers.GetValues(key)) {
                     if (key.IndexOfAny(new char[]{'\r','\n',':'})>=0 || value.IndexOfAny(new char[]{'\r','\n'})>=0) continue;
@@ -102,7 +111,7 @@ namespace SnipHero.Transport {
             sb.Append("\r\n");
             byte[] header=Encoding.ASCII.GetBytes(sb.ToString());
             stream.Write(header,0,header.Length);
-            if (bytes.Length>0) stream.Write(bytes,0,bytes.Length);
+            if (length>0) stream.Write(body,offset,length);
             stream.Flush();
             OutputStream.Dispose();
         }
@@ -120,10 +129,13 @@ namespace SnipHero.Transport {
                 client.ReceiveTimeout=15000;
                 client.SendTimeout=15000;
                 NetworkStream ns=client.GetStream();
+                // NetworkStream.ReadByte can make a socket read for every HTTP header byte.
+                // A buffered reader also handles POST body bytes, preserving read-ahead.
+                BufferedStream incoming=new BufferedStream(ns,16384);
                 MemoryStream h=new MemoryStream();
                 int state=0;
                 while (true) {
-                    int b=ns.ReadByte();
+                    int b=incoming.ReadByte();
                     if (b<0) throw new IOException("Client closed while sending headers");
                     if (h.Length>=MaxHeaders) throw new InvalidDataException("HTTP request headers exceed 32 KiB");
                     h.WriteByte((byte)b);
@@ -155,7 +167,7 @@ namespace SnipHero.Transport {
                 byte[] body=new byte[length];
                 int n=0;
                 while (n<length) {
-                    int got=ns.Read(body,n,length-n);
+                    int got=incoming.Read(body,n,length-n);
                     if (got<=0) throw new IOException("Incomplete request body");
                     n+=got;
                 }

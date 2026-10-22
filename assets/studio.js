@@ -17,16 +17,53 @@ function fileDataURL(file){return new Promise((resolve,reject)=>{const reader=ne
 function setFileName(name){$('#fileName').textContent=name||'Untitled image'}
 function fitZoom(){const area=$('#canvasScroller');let fit=Math.max(25,Math.min(100,Math.floor((area.clientWidth-80)/canvas.width*100/5)*5));setZoom(fit)}
 function setZoom(z){z=Math.max(25,Math.min(200,Number(z)||100));$('#zoom').value=z;$('#zoomLabel').textContent=z+'%';canvas.style.width=(canvas.width*z/100)+'px';canvas.style.height=(canvas.height*z/100)+'px'}
+let lastLayersSignature='',lastCaptureTiming='No capture timed yet';
 const editor=new SnipHeroEditor(canvas,(instance)=>{
   $('#dims').textContent=instance.canvas.width+' × '+instance.canvas.height;
+  // Pointer movement redraws the canvas frequently. Rebuild layer buttons ONLY when
+  // their contents or the selected layer changed, not for every pen/drag frame.
+  const signature=instance.selected+'|'+instance.objects.map(o=>o.type+':'+(o.text||'')).join('|');
+  if(signature===lastLayersSignature)return;
+  lastLayersSignature=signature;
   const layerRoot=$('#layers');layerRoot.replaceChildren();
   for(let i=instance.objects.length-1;i>=0;i--){let object=instance.objects[i];let button=document.createElement('button');button.className=i===instance.selected?'active':'';
     button.textContent=`${i+1}. ${object.type}${object.type==='text'?': '+(object.text||'').slice(0,22):''}`;
     button.onclick=()=>{instance.selected=i;instance.render()};layerRoot.append(button)}
 });
-async function loadImage(src,name,{autoSave=true}={}){await editor.setBackground(src);setFileName(name||'Imported image');fitZoom();notify('Image ready — '+canvas.width+' × '+canvas.height);if(autoSave&&settings.autoLibrary)await saveLibrary()}
-async function capture(endpoint){notify('Capturing desktop…');let response=await api(endpoint);if(!response.ok){let data=await response.json().catch(()=>({}));throw Error(data.cancelled?'Region capture cancelled':data.error||'Capture failed')}
-  await loadImage(await fileDataURL(await response.blob()),'Desktop capture')}
+async function saveOriginalPng(blob){
+  const r=await api('/api/library',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
+  if(!r.ok)throw Error('Automatic library save failed');
+  const info=await r.json();librarySelection=info.name;await refreshLibrary();
+}
+async function loadImage(src,name,{autoSave=true}={}){
+  await editor.setBackground(src);setFileName(name||'Imported image');fitZoom();
+  notify('Image ready — '+canvas.width+' × '+canvas.height);
+  // Saving must never block displaying the screenshot. Reuse the original PNG
+  // without re-encoding the canvas; defer disk I/O until after the UI can paint.
+  if(autoSave&&settings.autoLibrary){
+    const preserve=src instanceof Blob&&src.type==='image/png';
+    setTimeout(()=>{(preserve?saveOriginalPng(src):saveLibrary()).catch(fail)},0);
+  }
+}
+function parseServerTiming(header){
+  const result={};for(const match of (header||'').matchAll(/([a-z]+);dur=([0-9.]+)/g))result[match[1]]=Number(match[2]);return result;
+}
+async function capture(endpoint){
+  notify('Capturing desktop…');const start=performance.now();
+  let response=await api(endpoint);
+  if(!response.ok){let data=await response.json().catch(()=>({}));throw Error(data.cancelled?'Region capture cancelled':data.error||'Capture failed')}
+  const blob=await response.blob(),received=performance.now();
+  const timing=parseServerTiming(response.headers.get('Server-Timing'));
+  await loadImage(blob,'Desktop capture');const ready=performance.now();
+  const transfer=Math.round(received-start),decode=Math.round(ready-received);
+  const native=Number.isFinite(timing.acquire)?`native ${Math.round(timing.acquire)} ms, PNG ${Math.round(timing.encode||0)} ms, `:'';
+  const select=timing.selection>0?` (includes ${Math.round(timing.selection)} ms choosing region)`:'';
+  lastCaptureTiming=`${native}request/transfer ${transfer} ms, browser display ${decode} ms, ${Math.round(ready-start)} ms overall${select}`;
+  console.info('[SnipHero] capture timing:',lastCaptureTiming,'image size:',Math.round(blob.size/1024),'KiB');
+  const diagnostic=$('#diagnostics');
+  if(diagnostic)diagnostic.textContent=diagnostic.textContent.replace(/Last screenshot:[^\n]*/, 'Last screenshot: '+lastCaptureTiming);
+  notify('Screenshot ready · '+lastCaptureTiming);
+}
 async function refreshScreens(){try{let response=await api('/api/screens');if(!response.ok)throw Error('Screen query failed');let data=await response.json();$('#display').replaceChildren(new Option('All displays',''));(data.screens||[]).forEach((screen,index)=>$('#display').add(new Option('Display '+(index+1)+(screen.primary?' · primary':''),String(index))))}catch(e){fail(e)}}
 async function refreshWindows(){try{let r=await api('/api/windows');if(!r.ok)throw Error('Window enumeration failed');let d=await r.json();$('#windows').replaceChildren(new Option('Choose window',''));for(let w of d.windows||[])$('#windows').add(new Option(w.Title||w.title||'Untitled',String(w.Id??w.id)))}catch(e){fail(e)}}
 $('#capture').onclick=()=>capture('/api/capture'+($('#display').value!==''?'?screen='+encodeURIComponent($('#display').value):'')).catch(fail);
@@ -35,7 +72,7 @@ $('#refreshWindows').onclick=refreshWindows;
 $('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose an application window first');capture('/api/capture?window='+encodeURIComponent($('#windows').value)).catch(fail)};
 async function getSharedScreen(){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia({video:{frameRate:settings.recordFps},audio:false})}
 async function videoFor(stream){let video=document.createElement('video');video.srcObject=stream;video.muted=true;await video.play();if(!video.videoWidth)await new Promise(r=>setTimeout(r,400));return video}
-$('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(temp.toDataURL('image/png'),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
+$('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(await new Promise(resolve=>temp.toBlob(resolve,'image/png')),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
 const toolNames={select:'↖ Select',arrow:'↗ Arrow',rectangle:'▢ Rectangle',ellipse:'◯ Ellipse',line:'╱ Line',pen:'✎ Pen',highlight:'▰ Highlight',text:'T Text',step:'① Steps',redact:'■ Redact',pixelate:'▦ Pixelate',blur:'◍ Blur'};
 for(let [tool,title] of Object.entries(toolNames)){let button=document.createElement('button');button.className='tool';let parts=title.split(' ');button.innerHTML='<span class="tool-symbol">'+parts.shift()+'</span><span>'+parts.join(' ')+'</span>';button.title=title;button.dataset.tool=tool;
   button.onclick=()=>{editor.tool=tool;for(let b of $('#tools').children)b.classList.toggle('active',b===button);notify('Tool: '+title)};$('#tools').append(button)}
@@ -50,28 +87,60 @@ $('#editText').onclick=()=>{const selected=editor.objects[editor.selected];if(!s
 $('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in pixels',`0, 0, ${canvas.width}, ${canvas.height}`);if(!entry)return;const parts=entry.split(',').map(Number);if(parts.length!==4||parts.some(v=>!Number.isFinite(v)))return notify('Invalid crop coordinates');editor.crop(...parts).then(()=>{setFileName('Cropped image');fitZoom();notify('Image cropped')}).catch(fail)};
 $('#zoom').oninput=e=>setZoom(e.target.value);$('#zoomFit').onclick=fitZoom;
 $('#clear').onclick=()=>loadImage('data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="white"/></svg>'),'Blank image').catch(fail);
-$('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(!f.type.startsWith('image/'))throw Error('Choose an image file');await loadImage(await fileDataURL(f),f.name)}}catch(ex){fail(ex)}finally{e.target.value=''}};
-$('#projectSave').onclick=()=>download(new Blob([JSON.stringify(editor.serialize())],{type:'application/json'}),downloadName('sniphero.json'));
+$('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(!f.type.startsWith('image/'))throw Error('Choose an image file');await loadImage(f,f.name)}}catch(ex){fail(ex)}finally{e.target.value=''}};
+$('#projectSave').onclick=async()=>{try{const project=await editor.portableProject();download(new Blob([JSON.stringify(project)],{type:'application/json'}),downloadName('sniphero.json'))}catch(e){fail(e)}};
 $('#projectOpen').onclick=()=>$('#projectFile').click();$('#projectFile').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(f.size>60_000_000)throw Error('Project file too large');await editor.load(JSON.parse(await f.text()));setFileName(f.name);fitZoom();notify('Editable project loaded')}}catch(ex){fail(ex)}finally{e.target.value=''}};
 $('#png').onclick=()=>editor.export('image/png').then(b=>{download(b,downloadName('png'));notify('PNG exported')}).catch(fail);
 $('#jpg').onclick=()=>editor.export('image/jpeg').then(b=>{download(b,downloadName('jpg'));notify('JPEG exported')}).catch(fail);
 $('#copy').onclick=async()=>{try{const png=await editor.export();await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);notify('Image copied to clipboard')}catch(e){fail(e)}};
 $('#helpButton').onclick=()=>$('#helpDialog').showModal();$('#closeHelp').onclick=()=>$('#helpDialog').close();
-document.addEventListener('paste',async e=>{if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;const pasted=[...(e.clipboardData?.files||[])].find(f=>f.type.startsWith('image/'));if(pasted){e.preventDefault();try{await loadImage(await fileDataURL(pasted),'Pasted image')}catch(ex){fail(ex)}}});
+document.addEventListener('paste',async e=>{if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;const pasted=[...(e.clipboardData?.files||[])].find(f=>f.type.startsWith('image/'));if(pasted){e.preventDefault();try{await loadImage(pasted,'Pasted image')}catch(ex){fail(ex)}}});
 const scroller=$('#canvasScroller');['dragenter','dragover'].forEach(evt=>scroller.addEventListener(evt,e=>{e.preventDefault();$('#dropHint').hidden=false}));
 scroller.addEventListener('dragleave',e=>{if(!scroller.contains(e.relatedTarget))$('#dropHint').hidden=true});
-scroller.addEventListener('drop',async e=>{e.preventDefault();$('#dropHint').hidden=true;let f=[...(e.dataTransfer?.files||[])].find(x=>x.type.startsWith('image/'));if(f){try{await loadImage(await fileDataURL(f),f.name)}catch(ex){fail(ex)}}});
+scroller.addEventListener('drop',async e=>{e.preventDefault();$('#dropHint').hidden=true;let f=[...(e.dataTransfer?.files||[])].find(x=>x.type.startsWith('image/'));if(f){try{await loadImage(f,f.name)}catch(ex){fail(ex)}}});
 for(let tab of document.querySelectorAll('.tab'))tab.onclick=()=>{for(let t of document.querySelectorAll('.tab')){let active=t===tab;t.classList.toggle('active',active);t.setAttribute('aria-selected',active?'true':'false')}for(let p of document.querySelectorAll('.side-tab')){let active=p.id===tab.dataset.panel;p.hidden=!active;p.classList.toggle('active',active)}};
-let searchTimeout=null;
-async function refreshLibrary(){let root=$('#libraryItems');listURLs.forEach(u=>URL.revokeObjectURL(u));listURLs=[];root.replaceChildren();try{
+let searchTimeout=null,thumbnailObserver=null,thumbnailGeneration=0;
+let thumbnailQueue=[],thumbnailActive=0;
+function queueThumbnail(image,name,generation){
+  thumbnailQueue.push({image,name,generation});
+  pumpThumbnails();
+}
+function pumpThumbnails(){
+  // Limit competing requests on SnipHero's single-threaded local server.
+  while(thumbnailActive<2&&thumbnailQueue.length){
+    const job=thumbnailQueue.shift();if(job.generation!==thumbnailGeneration||!job.image.isConnected)continue;
+    thumbnailActive++;
+    api('/api/thumb/'+encodeURIComponent(job.name))
+      .then(r=>r.ok?r.blob():Promise.reject(Error('Missing thumbnail')))
+      .then(blob=>{
+        if(job.generation!==thumbnailGeneration||!job.image.isConnected)return;
+        const url=URL.createObjectURL(blob);listURLs.push(url);job.image.src=url;
+      }).catch(()=>{}).finally(()=>{thumbnailActive--;pumpThumbnails()});
+  }
+}
+async function refreshLibrary(){
+  let root=$('#libraryItems');thumbnailGeneration++;thumbnailQueue=[];
+  if(thumbnailObserver){thumbnailObserver.disconnect();thumbnailObserver=null}
+  listURLs.forEach(u=>URL.revokeObjectURL(u));listURLs=[];root.replaceChildren();try{
   let response=await api('/api/library?q='+encodeURIComponent($('#librarySearch').value));if(!response.ok)throw Error('Library unavailable');let data=await response.json();let items=data.items||[];
   if(!items.length){root.innerHTML='<div class="empty">No captures found. Save a screenshot to get started.</div>';return}
-  // Restrict preview fetches for responsiveness in large libraries.
-  for(let item of items.slice(0,90)){let button=document.createElement('button');button.className='capture-card'+(item.name===librarySelection?' active':'');
+  // The observer requests only visible thumbnail cards, not 32 full-size captures.
+  const generation=thumbnailGeneration;
+  if(typeof IntersectionObserver!=='undefined'){
+    thumbnailObserver=new IntersectionObserver(entries=>{
+      for(const entry of entries)if(entry.isIntersecting){
+        thumbnailObserver?.unobserve(entry.target);
+        const img=entry.target.querySelector('img');
+        if(img&&entry.target.isConnected)queueThumbnail(img,entry.target.dataset.capture,generation);
+      }
+    },{root,rootMargin:'140px'});
+  }
+  for(let item of items.slice(0,90)){let button=document.createElement('button');button.className='capture-card'+(item.name===librarySelection?' active':'');button.dataset.capture=item.name;
     let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString();text.append(name,meta);button.append(preview,text);root.append(button);
-    button.onclick=async()=>{try{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(await fileDataURL(blob),item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}catch(ex){fail(ex)}};
-    // Fetch thumbnails lazily so the main UI is usable immediately.
-    if(items.indexOf(item)<32)api('/api/library/'+encodeURIComponent(item.name)).then(r=>r.ok?r.blob():Promise.reject(Error('Missing thumb'))).then(blob=>{if(!button.isConnected)return;let url=URL.createObjectURL(blob);listURLs.push(url);preview.src=url}).catch(()=>{});
+    button.onclick=async()=>{try{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(blob,item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}catch(ex){fail(ex)}};
+    // Hidden cards incur no image decode or server work until scrolled into view.
+    if(thumbnailObserver)thumbnailObserver.observe(button);
+    else if(items.indexOf(item)<6)queueThumbnail(preview,item.name,generation);
   }
 }catch(e){fail(e)}}
 $('#libraryRefresh').onclick=refreshLibrary;$('#librarySearch').oninput=()=>{clearTimeout(searchTimeout);searchTimeout=setTimeout(refreshLibrary,200)};
@@ -146,6 +215,6 @@ document.addEventListener('keydown',event=>{
   else if(event.ctrlKey&&event.shiftKey&&key==='p'){event.preventDefault();$('#projectSave').click()}
 });
 async function diagnostics(){let native='unknown',ocr='unavailable';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';ocr=d.ocr?'available':'unavailable'}}catch{}
- $('#diagnostics').textContent='Windows capture: '+native+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nData remains on this computer.'}
+ $('#diagnostics').textContent='Windows capture: '+native+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
 refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();
 })();

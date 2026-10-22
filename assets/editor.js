@@ -6,19 +6,42 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
 class SnipHeroEditor {
   constructor(canvas, onChange=()=>{}) {
-    this.canvas=canvas; this.ctx=canvas.getContext('2d',{willReadFrequently:true});
+    this.canvas=canvas; this.ctx=canvas.getContext('2d',{alpha:false});
     this.onChange=onChange; this.background=null; this._img=null; this.objects=[];
     this.selected=-1; this.tool='select'; this.color='#ff465c'; this.width=4; this.font=26;
     this.zoom=1; this.counter=1; this.undoStack=[]; this.redoStack=[]; this.drag=null;
-    this.maxHistory=35; this.bind(); this.render();
+    this.maxHistory=35; this._blobUrls=new Set(); this.bind(); this.render();
   }
   state(){return {version:3,background:this.background,width:this.canvas.width,height:this.canvas.height,objects:clone(this.objects),counter:this.counter}}
   serialize(){return this.state()}
-  saveHistory(previous=this.state()) {this.undoStack.push(previous);if(this.undoStack.length>this.maxHistory)this.undoStack.shift();this.redoStack=[]}
+  saveHistory(previous=this.state()) {
+    this.undoStack.push(previous);
+    if(this.undoStack.length>this.maxHistory)this.undoStack.shift();
+    this.redoStack=[];
+    this.pruneBackgroundURLs();
+  }
+  pruneBackgroundURLs(){
+    const active=new Set([this.background,...this.undoStack.map(x=>x.background),...this.redoStack.map(x=>x.background)]);
+    for(const url of this._blobUrls)if(!active.has(url)){URL.revokeObjectURL(url);this._blobUrls.delete(url)}
+  }
+  // Data URL conversion happens only when the user explicitly saves an editable project.
+  // Normal captures and editor history retain the compressed original Blob without Base64 copies.
+  async portableProject(){
+    const project=this.serialize();
+    if(project.background?.startsWith('blob:')){
+      if(!this._blobUrls.has(project.background))throw Error('Background image no longer available');
+      const blob=await fetch(project.background).then(response=>response.blob());
+      project.background=await new Promise((resolve,reject)=>{
+        const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob);
+      });
+    }
+    if(project.background?.length>60_000_000)throw Error('Editable project exceeds the 60 MB image limit. Export flattened PNG instead.');
+    return project;
+  }
   async restore(state){
     if(!state||![2,3].includes(state.version)||!Array.isArray(state.objects)||state.objects.length>2000||!Number.isInteger(state.width)||!Number.isInteger(state.height)||state.width<1||state.height<1||state.width*state.height>100000000) throw Error('Project format or image dimensions unsupported');
     let image=null;
-    if(state.background){if(typeof state.background!=='string'||!state.background.startsWith('data:image/')||state.background.length>60_000_000)throw Error('Invalid background image');image=await this._image(state.background)}
+    if(state.background){if(typeof state.background!=='string'||!(state.background.startsWith('data:image/')&&state.background.length<=60_000_000)&&!this._blobUrls.has(state.background))throw Error('Invalid background image');image=await this._image(state.background)}
     this.background=state.background||null; this._img=image; this.canvas.width=state.width;this.canvas.height=state.height;
     this.objects=clone(state.objects);this.counter=state.counter||1;this.selected=-1;this.drag=null;this.render();
   }
@@ -26,7 +49,24 @@ class SnipHeroEditor {
   async undo(){if(!this.undoStack.length)return;let old=this.undoStack.pop(),current=this.state();await this.restore(old);this.redoStack.push(current)}
   async redo(){if(!this.redoStack.length)return;let next=this.redoStack.pop(),current=this.state();await this.restore(next);this.undoStack.push(current)}
   _image(src){return new Promise((resolve,reject)=>{let i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(Error('Image cannot be loaded'));i.src=src})}
-  async setBackground(src){const image=await this._image(src),old=this.state();if(image.width*image.height>100000000)throw Error('Image is too large');this.background=src;this._img=image;this.canvas.width=image.naturalWidth;this.canvas.height=image.naturalHeight;this.objects=[];this.selected=-1;this.counter=1;this.saveHistory(old);this.render()}
+  async setBackground(source){
+    let src=source,objectURL=null;
+    if(source instanceof Blob){
+      if(source.size>60_000_000)throw Error('Image file exceeds 60 MB');
+      src=objectURL=URL.createObjectURL(source);
+    }
+    let image;
+    try {
+      image=await this._image(src);
+      if(image.naturalWidth*image.naturalHeight>100000000)throw Error('Image is too large');
+    } catch(error){if(objectURL)URL.revokeObjectURL(objectURL);throw error}
+    const old=this.state();
+    if(objectURL)this._blobUrls.add(objectURL);
+    this.background=src;this._img=image;
+    this.canvas.width=image.naturalWidth;this.canvas.height=image.naturalHeight;
+    this.objects=[];this.selected=-1;this.counter=1;
+    this.saveHistory(old);this.render();
+  }
   point(e){const r=this.canvas.getBoundingClientRect();return {x:(e.clientX-r.left)*this.canvas.width/r.width,y:(e.clientY-r.top)*this.canvas.height/r.height}}
   bounds(o){
     if(o.type==='pen'||o.type==='highlight'){let p=o.points||[{x:o.x,y:o.y}];return {x:Math.min(...p.map(v=>v.x)),y:Math.min(...p.map(v=>v.y)),w:Math.max(1,Math.max(...p.map(v=>v.x))-Math.min(...p.map(v=>v.x))),h:Math.max(1,Math.max(...p.map(v=>v.y))-Math.min(...p.map(v=>v.y)))}}
