@@ -18,7 +18,7 @@ Add-Type -Path (Join-Path $pwshDir 'Microsoft.CodeAnalysis.CSharp.dll')
 $parse = [Microsoft.CodeAnalysis.CSharp.CSharpParseOptions]::new([Microsoft.CodeAnalysis.CSharp.LanguageVersion]::CSharp5)
 $options = [Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions]::new([Microsoft.CodeAnalysis.OutputKind]::DynamicallyLinkedLibrary)
 $failed = 0
-Get-ChildItem -LiteralPath $root -Recurse -Include *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {
+Get-ChildItem -Path $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {
     $text = [IO.File]::ReadAllText($_.FullName)
     $blocks = [regex]::Matches($text, "(?s)-TypeDefinition\s+@'\r?\n(.*?)\r?\n'@")
     $i = 0
