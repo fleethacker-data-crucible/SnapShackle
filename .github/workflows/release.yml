@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build Lasso-<version>.zip (runtime files only)
-        shell: pwsh
+        shell: powershell
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
@@ -33,7 +33,7 @@ jobs:
           path: ${{ env.ZIP }}
       - name: Attach to the GitHub release
         if: github.ref_type == 'tag'
-        shell: pwsh
+        shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create $env:GITHUB_REF_NAME $env:ZIP --title "Lasso $env:GITHUB_REF_NAME" --generate-notes

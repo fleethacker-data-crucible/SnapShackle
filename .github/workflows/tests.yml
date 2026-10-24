@@ -26,7 +26,7 @@ jobs:
                   print(f'::error title={script}::{type(error).__name__}: {error}')
                   sys.exit(1)
       - name: JavaScript syntax
-        shell: pwsh
+        shell: powershell
         run: |
           if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Host 'node not installed; skipping'; exit 0 }
           Get-ChildItem assets\*.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { exit 1 } }
