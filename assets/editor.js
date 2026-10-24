@@ -164,8 +164,12 @@ class LassoEditor {
       const mini=document.createElement('canvas');mini.width=Math.max(1,Math.ceil(w/14));mini.height=Math.max(1,Math.ceil(h/14));
       mini.getContext('2d').drawImage(off,0,0,mini.width,mini.height);c.imageSmoothingEnabled=false;c.drawImage(mini,x,y,w,h);c.imageSmoothingEnabled=true;
     }else{
-      // The expanded destination avoids transparent blur fringes inside a clipped region.
-      c.filter='blur(9px)';c.drawImage(off,x-12,y-12,w+24,h+24);c.filter='none';
+      // Sample a margin around the region at 1:1 scale so the blur has real neighbours at its
+      // edges. (Stretching the snapshot into a larger box shifted and scaled the content.)
+      const pad=18,W=this.canvas.width,H=this.canvas.height,sx=Math.max(0,x-pad),sy=Math.max(0,y-pad),
+            sw=Math.min(W,x+w+pad)-sx,sh=Math.min(H,y+h+pad)-sy,wide=document.createElement('canvas');
+      wide.width=sw;wide.height=sh;wide.getContext('2d').drawImage(this.canvas,sx,sy,sw,sh,0,0,sw,sh);
+      c.filter='blur(9px)';c.drawImage(wide,sx,sy);c.filter='none';
     }
   }
   drawSelection(c,o){const b=this.bounds(o);c.save();c.setLineDash([6,5]);c.strokeStyle='#31c5ff';c.lineWidth=2;c.strokeRect(b.x-5,b.y-5,b.w+10,b.h+10);c.setLineDash([]);for(const p of this.handles(o)){c.fillStyle='#fff';c.fillRect(p.x-5,p.y-5,10,10);c.strokeRect(p.x-5,p.y-5,10,10)}c.restore()}

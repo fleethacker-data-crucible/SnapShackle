@@ -158,5 +158,11 @@ Test-Case 'Every PowerShell file parses' {
     Assert-True ($errors.Count -eq 0) ($errors -join '; ')
 }
 
+Test-Case 'PowerShell files are ASCII (5.1 reads BOM-less files as ANSI)' {
+    $bad = @(Get-ChildItem -Path $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } |
+        Where-Object { @([IO.File]::ReadAllBytes($_.FullName) | Where-Object { $_ -gt 127 }).Count -gt 0 } | ForEach-Object { $_.Name })
+    Assert-True ($bad.Count -eq 0) ('non-ASCII bytes in: ' + ($bad -join ', '))
+}
+
 Write-Host ("{0} passed, {1} failed" -f $script:passes, $script:failures)
 if ($script:failures -gt 0) { exit 1 }

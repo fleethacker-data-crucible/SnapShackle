@@ -7,7 +7,9 @@ param(
     [ValidateRange(1024,65535)][int]$Port=8765,
     [switch]$NoBrowser,
     [ValidateRange(1,500)][int]$PortScanCount=100,
-    [switch]$Diagnostics
+    [switch]$Diagnostics,
+    # Skip global hotkeys and the tray icon (tests, or when another tool owns the keys).
+    [switch]$NoTray
 )
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
@@ -18,6 +20,8 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Native.ps1')
 . (Join-Path $root 'modules/Ocr.ps1')
 . (Join-Path $root 'modules/Migration.ps1')
+. (Join-Path $root 'modules/Library.ps1')
+. (Join-Path $root 'modules/Tray.ps1')
 $LassoVersion = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
 $library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Lasso\Captures' } else { Join-Path $root 'captures' }
 # Captures from SnipHero builds keep working: they are moved (never copied or deleted) on first start.
@@ -93,6 +97,7 @@ function Assert-Png([byte[]]$Bytes) {
     $height = ([long]$Bytes[20] -shl 24) + ([long]$Bytes[21] -shl 16) + ([long]$Bytes[22] -shl 8) + $Bytes[23]
     if ($width -le 0 -or $height -le 0 -or $width*$height -gt 100000000) { throw 'PNG image dimensions exceed limit' }
 }
+function Get-LassoDelay($Query) { if ($Query['delay'] -match '^\d{1,2}$') { [Math]::Min(10,[int]$Query['delay']) } else { 0 } }
 function Get-MetaPath([string]$Name) { Join-Path $library ($Name + '.meta.json') }
 function Get-SafeCapturePath([string]$Name) {
     if ($Name -notmatch ('^' + $CaptureNamePattern + '$')) { throw 'Invalid capture name' }
@@ -168,7 +173,7 @@ function Invoke-LassoRequest($Context) {
     }
     if ($request.Headers['X-Lasso-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;ocr=(Test-LassoOcr);version=$LassoVersion;offline=$true};return
+        Send-Json $Context @{capture=$true;ocr=(Test-LassoOcr);version=$LassoVersion;offline=$true;dpi=$script:LassoDpiMode;hotkeys=@($shared.Hotkeys)};return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
         Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
@@ -178,15 +183,19 @@ function Invoke-LassoRequest($Context) {
     if ($path -eq '/api/windows' -and $method -eq 'GET') { Send-Json $Context @{windows=@(Get-LassoWindows)};return }
     if ($path -eq '/api/capture' -and $method -eq 'GET') {
         $q=$request.QueryString
+        Wait-LassoDelay (Get-LassoDelay $q)
+        if ($q['window'] -match '^\d+$') {
+            # PrintWindow: the window's own pixels, even where the studio or anything else covers it.
+            $png=Get-LassoWindowCapture ([long]$q['window'])
+            $Context.Response.Headers.Add('X-Lasso-Capture-Method',[string]$script:LassoLastWindowMethod)
+            Add-CaptureTimingHeaders $Context
+            Send-Response $Context $png 'image/png';return
+        }
         $r=[Windows.Forms.SystemInformation]::VirtualScreen
         if ($q['screen'] -match '^\d+$') {
             $screens=@([Windows.Forms.Screen]::AllScreens);$i=[int]$q['screen']
             if ($i -ge $screens.Count) { throw 'Invalid screen' }
             $r=$screens[$i].Bounds
-        }
-        if ($q['window'] -match '^\d+$') {
-            $w=[Lasso.Native]::Window([long]$q['window'])
-            $r=[Drawing.Rectangle]::new($w.X,$w.Y,$w.Width,$w.Height)
         }
         if ($q['x'] -match '^-?\d+$' -and $q['y'] -match '^-?\d+$' -and $q['w'] -match '^\d+$' -and $q['h'] -match '^\d+$') {
             $r=[Drawing.Rectangle]::new([int]$q['x'],[int]$q['y'],[int]$q['w'],[int]$q['h'])
@@ -195,8 +204,17 @@ function Invoke-LassoRequest($Context) {
         Add-CaptureTimingHeaders $Context
         Send-Response $Context $png 'image/png';return
     }
+    if ($path -eq '/api/events' -and $method -eq 'GET') {
+        # Polled by the studio: hotkey captures made while the browser was in the background.
+        $since=if ($request.QueryString['since'] -match '^\d{1,9}$') { [int]$request.QueryString['since'] } else { 0 }
+        $items=@($shared.Events.ToArray() | Where-Object { $_.id -gt $since })
+        Send-Json $Context @{events=$items;latest=$shared.NextId};return
+    }
     if ($path -eq '/api/region' -and $method -eq 'GET') {
-        $bytes=Get-LassoRegion
+        if ($shared.Busy) { Send-Json $Context @{error='A capture is already in progress'} 409;return }
+        Wait-LassoDelay (Get-LassoDelay $request.QueryString)
+        $shared.Busy=$true
+        try { $bytes=Get-LassoRegion } finally { $shared.Busy=$false }
         if ($null -eq $bytes) { Send-Json $Context @{cancelled=$true} 409 }
         else { Add-CaptureTimingHeaders $Context; Send-Response $Context $bytes 'image/png' }
         return
@@ -206,15 +224,14 @@ function Invoke-LassoRequest($Context) {
         $bytes=Read-Body $Context 15000000
         Assert-Png $bytes
         $result=Invoke-LassoOcr $bytes
-        Send-Json $Context @{text=$result;engine='Windows.Media.Ocr'};return
+        Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
     }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
         Send-Json $Context @{items=@(Get-CaptureList $request.QueryString['q'])};return
     }
     if ($path -eq '/api/library' -and $method -eq 'POST') {
         $bytes=Read-Body $Context 25000000;Assert-Png $bytes
-        $name='Lasso-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8)+'.png'
-        [IO.File]::WriteAllBytes((Join-Path $library $name),$bytes)
+        $name=Save-LassoCapture $library $bytes
         Send-Json $Context @{name=$name};return
     }
     if ($method -eq 'GET' -and $path -match ('^/api/thumb/(' + $CaptureNamePattern + ')$')) {
@@ -251,14 +268,30 @@ function Invoke-LassoRequest($Context) {
     Send-Json $Context @{error='Route not found'} 404
 }
 $base="http://127.0.0.1:$Port/"
+$shared=[hashtable]::Synchronized(@{
+    Events=[Collections.ArrayList]::Synchronized([Collections.ArrayList]::new()); NextId=0
+    Quit=$false; Busy=$false; Hotkeys=@(); BaseUrl=$base; Server=$server; LastName=$null; TrayReady=$false
+})
 Write-Host "Lasso $LassoVersion local server: $base" -ForegroundColor Red
-Write-Host 'Press Ctrl+C in this console to stop.'
+$tray=$null
+if (-not $NoTray) {
+    try {
+        $tray=Start-LassoTray $root $library $shared
+        for ($i=0; $i -lt 30 -and -not $shared.TrayReady -and -not $shared.TrayError; $i++) { Start-Sleep -Milliseconds 100 }
+        if ($shared.TrayError) { Write-Warning ('Hotkeys and tray unavailable: ' + $shared.TrayError) }
+        foreach ($h in $shared.Hotkeys) {
+            if ($h.keys) { Write-Host ('  ' + $h.keys + '  capture ' + $h.action) }
+            else { Write-Warning ('No free hotkey for ' + $h.action + ' capture; use the tray menu or the studio.') }
+        }
+    } catch { Write-Warning ('Hotkeys and tray unavailable: ' + $_.Exception.Message) }
+}
+Write-Host 'Press Ctrl+C in this console (or Quit in the tray menu) to stop.'
 if (-not $NoBrowser) {
     try { Start-Process $base }
     catch { Write-Warning ('Browser did not open automatically: ' + $_.Exception.Message + '. Open ' + $base + ' manually.') }
 }
 try {
-    while ($true) {
+    while (-not $shared.Quit) {
         $context=$null
         try {
             $context=$server.Accept()
@@ -266,6 +299,7 @@ try {
         } catch [System.IO.InvalidDataException] {
             Write-Warning ('Rejected malformed local HTTP request: ' + $_.Exception.Message)
         } catch {
+            if ($shared.Quit) { break }
             Write-Warning ('Local HTTP request failed: ' + $_.Exception.Message)
             if ($null -ne $context) {
                 try { if ($context.Response.OutputStream.CanWrite) { Send-Json $context @{error='Request failed'} 500 } } catch {}
@@ -275,5 +309,6 @@ try {
         }
     }
 } finally {
+    Stop-LassoTray $tray $shared
     $server.Dispose()
 }
