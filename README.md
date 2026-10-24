@@ -33,6 +33,23 @@ Lasso.bat -Diagnostics
 
 Captures live under `%LOCALAPPDATA%\Lasso\Captures`. On first start, Lasso **moves** any SnipHero captures from `%LOCALAPPDATA%\SnipHero\Captures` into it (files are never copied, deleted or overwritten; a name that already exists stays in the old folder). Old `SnipHero-*.png` names and `.sniphero.json` projects keep working. Browser settings are stored locally (`localStorage`). Screenshot bytes and OCR data are not transmitted off the computer by Lasso. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
 
+## Capturing without the studio in the way (v0.9)
+
+- **Global hotkeys** work from any app, so the studio never appears in your captures. Lasso tries each preferred chord and falls back if another app (or Windows' "Print Screen opens Snipping Tool" setting) already owns it:
+
+  | Capture | Preferred | Fallback |
+  | --- | --- | --- |
+  | Region (or click a window) | `PrtScn` | `Ctrl+Alt+S` |
+  | Active window | `Alt+PrtScn` | `Ctrl+Alt+W` |
+  | Screen under the cursor | `Shift+PrtScn` | `Ctrl+Alt+F` |
+
+  The console, the tray tooltip menu and **Workflows → Diagnostics** show which chords are active. A hotkey capture is copied to the clipboard (bitmap plus PNG), saved to the library, and opened in the studio if it is open. Click the notification or the tray icon to open the studio.
+- **Tray icon** with Capture region, Capture screen, Open studio and Quit Lasso. Start with `-NoTray` to skip hotkeys and the tray.
+- **Selection overlay:** hovering highlights the window under the cursor and a click takes it; dragging draws a free region; `Shift` keeps it square; `Esc` or right-click cancels. A loupe shows magnified pixels, screen coordinates and the colour under the cursor. The overlay takes keyboard focus as it opens.
+- **Window capture uses `PrintWindow`** (`PW_RENDERFULLCONTENT`), so a window's own content is captured even where other windows, including the studio, cover it. Apps that answer with a blank image fall back to screen pixels; the status bar says which method was used. Window bounds come from DWM, so the invisible 7 px resize borders are no longer included, and windows on other virtual desktops are hidden from the list.
+- **Per-monitor DPI v2**, so selections line up on mixed-DPI monitors.
+- **Delay:** 3, 5 or 10 seconds before a studio-button capture, to open menus or switch windows.
+
 ## Screenshot latency improvements (v0.7)
 
 - **Single desktop snapshot for region capture:** region selection now crops the **already-captured original bitmap**. The previous build called `CopyFromScreen` *again* after selection, adding latency and risking capture of the overlay or newer screen state. Crop uses lossless GDI+ `Bitmap.Clone` and preserves native resolution.
@@ -67,7 +84,6 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 
 ### Known gaps
 
-- No reliable **native global hotkeys** when the browser is unfocused; browser shortcuts work in the active studio tab.
 - No universal autonomous scrolling through arbitrary external applications.
 - No guaranteed OCR on every locked-down workstation.
 - No signed installer, MSI, policy-managed settings, centralized telemetry, update service, multi-user permissions, or full enterprise accessibility certification.
@@ -75,6 +91,8 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 
 ## Testing and development
 
+- `pwsh dev/csharp_check.ps1 -ReferenceDir <v4.8 reference assemblies>` compiles every inline C# block as C# 5 against .NET Framework 4.8 (what Windows PowerShell 5.1 uses), so native code can be checked without Windows. Reference assemblies: the `v4.8` folder of [mono/reference-assemblies](https://github.com/mono/reference-assemblies).
+- `python tests/effects_test.py` checks that blur stays aligned with what it covers.
 - `powershell -NoProfile -File tests/host_tests.ps1` tests the HTTP transport (Host checks, port fallback, rejected requests) and the SnipHero migration. It also parses every `.ps1` file. Runs on Windows PowerShell 5.1 and PowerShell 7.
 - CI runs these on the self-hosted Windows runner (`.github/workflows/tests.yml`). Pushing a `v*` tag that matches `VERSION` builds `Lasso-<version>.zip` with runtime files only (`release.yml`).
 
@@ -101,6 +119,8 @@ modules/LocalHttp.ps1      Loopback TCP / bounded HTTP adapter and dynamic port 
 modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time move of SnipHero captures into the Lasso library
+modules/Library.ps1        Capture naming and saving, shared by the host and the tray
+modules/Tray.ps1           Global hotkeys and tray icon on their own STA thread
 index.html                 Studio layout
 assets/styles.css          Standalone responsive theme
 assets/editor.js           Editable non-destructive object engine
