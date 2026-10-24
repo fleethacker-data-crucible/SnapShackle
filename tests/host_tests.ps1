@@ -150,7 +150,7 @@ Test-Case 'Migration is a no-op without a legacy folder' {
 
 Test-Case 'Every PowerShell file parses' {
     $errors = @()
-    Get-ChildItem -LiteralPath $root -Recurse -Include *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {
+    Get-ChildItem -Path $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {
         $tokens = $null; $parseErrors = $null
         [void][Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors)
         foreach ($e in $parseErrors) { $errors += ($_.Name + ':' + $e.Extent.StartLineNumber + ' ' + $e.Message) }
