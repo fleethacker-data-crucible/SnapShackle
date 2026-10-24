@@ -33,6 +33,12 @@ Lasso.bat -Diagnostics
 
 Captures live under `%LOCALAPPDATA%\Lasso\Captures`. On first start, Lasso **moves** any SnipHero captures from `%LOCALAPPDATA%\SnipHero\Captures` into it (files are never copied, deleted or overwritten; a name that already exists stays in the old folder). Old `SnipHero-*.png` names and `.sniphero.json` projects keep working. Browser settings are stored locally (`localStorage`). Screenshot bytes and OCR data are not transmitted off the computer by Lasso. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
 
+## Smart redaction and searchable library (v0.10)
+
+- **Find sensitive info** (Workflows tab) reads the image with OCR and lists emails, SSNs, card numbers (Luhn-checked), DoD IDs (10 digits), US phone numbers and IPv4 addresses. Untick anything you want to keep, then **Redact checked** covers the rest with solid boxes in one undo step. **Redact every instance of** covers a word or phrase wherever OCR finds it. OCR can miss small or stylised text, so check the image before you share it.
+- **Search by the text in your screenshots.** Captures saved to the library (and hotkey captures) are OCR-indexed in their `.meta.json` sidecar, and library search matches that text as well as names, tags and notes. Results found through the image text say so. Editing tags or notes keeps the index.
+- **Preferences are stored by the host** in `%LOCALAPPDATA%\Lasso\settings.json`. The browser keys its storage by origin, and the origin includes the port, so a port fallback used to start with empty preferences.
+
 ## Capturing without the studio in the way (v0.9)
 
 - **Global hotkeys** work from any app, so the studio never appears in your captures. Lasso tries each preferred chord and falls back if another app (or Windows' "Print Screen opens Snipping Tool" setting) already owns it:
