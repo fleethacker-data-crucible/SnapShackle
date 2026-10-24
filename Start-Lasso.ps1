@@ -28,6 +28,7 @@ $library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Lasso\Captures'
 $legacyLibrary = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnipHero\Captures' } else { $null }
 $null = Move-LassoLegacyLibrary -Legacy $legacyLibrary -Target $library
 [void][IO.Directory]::CreateDirectory($library)
+$settingsPath = Join-Path (Split-Path -Parent $library) 'settings.json'
 # Accept both prefixes so SnipHero-era captures stay visible in the library.
 $CaptureNamePattern = '(?:Lasso|SnipHero)-[a-zA-Z0-9_.-]+\.png'
 if ($Diagnostics) {
@@ -98,21 +99,10 @@ function Assert-Png([byte[]]$Bytes) {
     if ($width -le 0 -or $height -le 0 -or $width*$height -gt 100000000) { throw 'PNG image dimensions exceed limit' }
 }
 function Get-LassoDelay($Query) { if ($Query['delay'] -match '^\d{1,2}$') { [Math]::Min(10,[int]$Query['delay']) } else { 0 } }
-function Get-MetaPath([string]$Name) { Join-Path $library ($Name + '.meta.json') }
+function Get-MetaPath([string]$Name) { Get-LassoMetaPath $library $Name }
 function Get-SafeCapturePath([string]$Name) {
     if ($Name -notmatch ('^' + $CaptureNamePattern + '$')) { throw 'Invalid capture name' }
     Join-Path $library $Name
-}
-function Get-CaptureList([string]$Query) {
-    $search = ([string]$Query).ToLowerInvariant()
-    @((Get-ChildItem -LiteralPath $library -File -Filter '*.png' |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 2000 | ForEach-Object {
-          $metadata = @{tags=@();note=''}
-          $mp = Get-MetaPath $_.Name
-          if (Test-Path -LiteralPath $mp) { try { $metadata=Get-Content -LiteralPath $mp -Raw | ConvertFrom-Json } catch {} }
-          [pscustomobject]@{name=$_.Name;bytes=$_.Length;modified=$_.LastWriteTime.ToString('o');tags=@($metadata.tags | Where-Object { $_ });note=[string]$metadata.note}
-        } | Where-Object { -not $search -or ($_.name+' '+$_.note+' '+($_.tags -join ' ')).ToLowerInvariant().Contains($search) } |
-        Select-Object -First 250))
 }
 # Keep a small, bounded in-memory thumbnail cache: no persistent duplicate screenshots.
 $script:thumbnailCache = [Collections.Generic.Dictionary[string,byte[]]]::new([StringComparer]::Ordinal)
@@ -204,6 +194,13 @@ function Invoke-LassoRequest($Context) {
         Add-CaptureTimingHeaders $Context
         Send-Response $Context $png 'image/png';return
     }
+    if ($path -eq '/api/settings') {
+        if ($method -eq 'GET') { Send-Json $Context (Get-LassoSettings $settingsPath);return }
+        if ($method -eq 'PUT') {
+            $changes=[Text.Encoding]::UTF8.GetString((Read-Body $Context 16384)) | ConvertFrom-Json
+            Send-Json $Context (Set-LassoSettings $settingsPath $changes);return
+        }
+    }
     if ($path -eq '/api/events' -and $method -eq 'GET') {
         # Polled by the studio: hotkey captures made while the browser was in the background.
         $since=if ($request.QueryString['since'] -match '^\d{1,9}$') { [int]$request.QueryString['since'] } else { 0 }
@@ -227,12 +224,15 @@ function Invoke-LassoRequest($Context) {
         Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
     }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
-        Send-Json $Context @{items=@(Get-CaptureList $request.QueryString['q'])};return
+        Send-Json $Context @{items=@(Get-LassoCaptureList $library $request.QueryString['q'] $CaptureNamePattern)};return
     }
     if ($path -eq '/api/library' -and $method -eq 'POST') {
         $bytes=Read-Body $Context 25000000;Assert-Png $bytes
         $name=Save-LassoCapture $library $bytes
-        Send-Json $Context @{name=$name};return
+        Send-Json $Context @{name=$name}
+        # After the reply has gone out: index the text in the image so the library can search it.
+        $null=Update-LassoOcrIndex $library $name $bytes
+        return
     }
     if ($method -eq 'GET' -and $path -match ('^/api/thumb/(' + $CaptureNamePattern + ')$')) {
         $thumbnail=Get-LassoThumbnail $Matches[1]
@@ -256,12 +256,8 @@ function Invoke-LassoRequest($Context) {
         }
         if ($method -eq 'PUT') {
             $metadata=[Text.Encoding]::UTF8.GetString((Read-Body $Context 65536)) | ConvertFrom-Json
-            $tags=@($metadata.tags | Select-Object -First 20 | ForEach-Object {
-              $v=[string]$_;$v.Substring(0,[Math]::Min(40,$v.Length))
-            })
-            $note=[string]$metadata.note
-            if ($note.Length -gt 2000) { $note=$note.Substring(0,2000) }
-            @{tags=$tags;note=$note} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Get-MetaPath $name) -Encoding UTF8
+            # Merge: tags and note change, indexed OCR text is kept.
+            Set-LassoMeta $library $name @{ tags=@($metadata.tags | ForEach-Object { [string]$_ }); note=[string]$metadata.note }
             Send-Json $Context @{updated=$true};return
         }
     }

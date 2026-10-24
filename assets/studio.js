@@ -143,7 +143,7 @@ async function refreshLibrary(){
     },{root,rootMargin:'140px'});
   }
   for(let item of items.slice(0,90)){let button=document.createElement('button');button.className='capture-card'+(item.name===librarySelection?' active':'');button.dataset.capture=item.name;
-    let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString();text.append(name,meta);button.append(preview,text);root.append(button);
+    let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.textMatch?'Text in image matches · ':'')+((item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString());text.append(name,meta);button.append(preview,text);root.append(button);
     button.onclick=async()=>{try{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(blob,item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}catch(ex){fail(ex)}};
     // Hidden cards incur no image decode or server work until scrolled into view.
     if(thumbnailObserver)thumbnailObserver.observe(button);
@@ -235,8 +235,22 @@ $('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.tr
   notify('Reading text…');const r=await recognize();const hits=LassoRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
   notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{};notify('Preferences saved')};
-$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps}
+// Settings are kept by the host (a port change would give the browser a new, empty storage origin).
+async function loadSettings(){
+  try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
+    if(saved.saved){settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps}}
+    else{await saveSettings(false)}  // First run: move browser-stored preferences to the host once.
+    showSettings()}catch(e){console.warn('[Lasso] settings',e)}
+}
+async function saveSettings(announce=true){
+  try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{}
+  const r=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)});
+  if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps};
+  if(announce){showSettings();notify('Preferences saved')}
+}
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));saveSettings().catch(fail)};
+showSettings();
 document.addEventListener('keydown',event=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
   const key=event.key.toLowerCase();if(event.ctrlKey&&key==='z'){event.preventDefault();editor.undo().catch(fail)}
@@ -262,5 +276,5 @@ async function pollEvents(){
 setInterval(pollEvents,1500);document.addEventListener('visibilitychange',pollEvents);window.addEventListener('focus',pollEvents);
 async function openFromHash(){const m=location.hash.match(/^#open=((?:Lasso|SnipHero)-[A-Za-z0-9_.-]+\.png)$/);if(!m)return;history.replaceState(null,'',location.pathname);try{await openCapture(m[1],'Hotkey capture')}catch(e){fail(e)}}
 window.addEventListener('hashchange',openFromHash);
-refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();
+refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();loadSettings();
 })();
