@@ -16,6 +16,7 @@ Write-Host ('PowerShell ' + $PSVersionTable.PSVersion + ' ' + $PSVersionTable.PS
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 . (Join-Path $root 'modules/LocalHttp.ps1')
 . (Join-Path $root 'modules/Migration.ps1')
+. (Join-Path $root 'modules/Library.ps1')
 
 $script:failures = 0
 $script:passes = 0
@@ -146,6 +147,61 @@ Test-Case 'Migration merges into an existing library without overwriting' {
 Test-Case 'Migration is a no-op without a legacy folder' {
     $r = Move-LassoLegacyLibrary -Legacy (Join-Path ([IO.Path]::GetTempPath()) 'does-not-exist-lasso') -Target (Join-Path ([IO.Path]::GetTempPath()) 'unused-lasso')
     Assert-True ($r.Moved -eq 0 -and -not $r.WholeFolder) 'expected nothing to happen'
+}
+
+Test-Case 'Metadata edits keep the indexed OCR text' {
+    $base = New-TempDir
+    try {
+        $name = Save-LassoCapture $base ([byte[]](1,2,3))
+        Set-LassoMeta $base $name @{ ocr = 'Quarterly readiness report' }
+        Set-LassoMeta $base $name @{ tags = @('ops','q3'); note = 'for review' }
+        $meta = Get-LassoMeta $base $name
+        Assert-True ($meta.ocr -eq 'Quarterly readiness report') "ocr text lost: '$($meta.ocr)'"
+        Assert-True (($meta.tags -join ',') -eq 'ops,q3' -and $meta.note -eq 'for review') 'tags or note not saved'
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+
+Test-Case 'Library search matches text inside images, names and tags' {
+    $base = New-TempDir
+    try {
+        $a = Save-LassoCapture $base ([byte[]](1)); Set-LassoMeta $base $a @{ ocr = 'Deployment schedule for USS Example' }
+        $b = Save-LassoCapture $base ([byte[]](2)); Set-LassoMeta $base $b @{ tags = @('schedule') }
+        [IO.File]::WriteAllBytes((Join-Path $base 'SnipHero-old.png'), [byte[]](3))
+        [IO.File]::WriteAllBytes((Join-Path $base 'unrelated.png'), [byte[]](4))
+        $all = Get-LassoCaptureList $base ''
+        Assert-True ($all.Count -eq 3) "expected 3 captures (old SnipHero name included, stray file excluded), got $($all.Count)"
+        $hits = Get-LassoCaptureList $base 'SCHEDULE'
+        Assert-True ($hits.Count -eq 2) "expected 2 hits, got $($hits.Count)"
+        $byText = @($hits | Where-Object { $_.name -eq $a })[0]
+        Assert-True ($byText.textMatch -and $byText.hasText) 'OCR match not flagged'
+        Assert-True (-not @($hits | Where-Object { $_.name -eq $b })[0].textMatch) 'tag match wrongly flagged as text match'
+        Assert-True ((Get-LassoCaptureList $base 'uss example').Count -eq 1) 'phrase search failed'
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+
+Test-Case 'OCR indexing is a no-op where native OCR is unavailable' {
+    $base = New-TempDir
+    try {
+        $name = Save-LassoCapture $base ([byte[]](1))
+        $indexed = Update-LassoOcrIndex $base $name ([byte[]](1))
+        if (-not (Get-Command Test-LassoOcr -ErrorAction SilentlyContinue)) { Assert-True (-not $indexed) 'claimed to index without OCR' }
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+
+Test-Case 'Settings persist in a file and are sanitised' {
+    $base = New-TempDir
+    try {
+        $path = Join-Path $base 'settings.json'
+        $fresh = Get-LassoSettings $path
+        Assert-True (-not $fresh.saved -and $fresh.namePrefix -eq 'Lasso' -and $fresh.recordFps -eq 6) 'bad defaults'
+        $null = Set-LassoSettings $path ([pscustomobject]@{ namePrefix = 'My Shots!/..'; recordFps = 99; autoLibrary = $true; evil = 'x' })
+        $saved = Get-LassoSettings $path
+        Assert-True ($saved.saved -and $saved.namePrefix -eq 'MyShots' -and $saved.recordFps -eq 12 -and $saved.autoLibrary) "not sanitised: $($saved | ConvertTo-Json -Compress)"
+        Assert-True (-not $saved.Contains('evil')) 'unknown key stored'
+        $null = Set-LassoSettings $path @{ recordFps = 4 }
+        $again = Get-LassoSettings $path
+        Assert-True ($again.recordFps -eq 4 -and $again.namePrefix -eq 'MyShots') 'partial update lost other settings'
+    } finally { [IO.Directory]::Delete($base, $true) }
 }
 
 Test-Case 'Every PowerShell file parses' {
