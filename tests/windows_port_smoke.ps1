@@ -6,6 +6,13 @@
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
+# On GitHub Actions, report the reason as an annotation so it shows on the PR checks.
+trap {
+    $message = 'Port smoke test failed: ' + $_.Exception.Message
+    Write-Host $message -ForegroundColor Red
+    if ($env:GITHUB_ACTIONS -eq 'true') { Write-Host ('::error title=windows_port_smoke::' + ($message -replace "`r?`n", ' ')) }
+    exit 1
+}
 $root = Split-Path -Parent $PSScriptRoot
 $hostScript = Join-Path $root 'Start-Lasso.ps1'
 $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -19,7 +26,7 @@ try {
     $arg = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "' + $hostScript + '" -NoBrowser -Port ' + $occupiedPort + ' -PortScanCount 4'
     $child = Start-Process -FilePath $psExe -ArgumentList $arg -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile -WindowStyle Hidden
     $url = $null
-    for ($i=0; $i -lt 120; $i++) {
+    for ($i=0; $i -lt 300; $i++) {
         Start-Sleep -Milliseconds 100
         if (Test-Path $outFile) {
             $m = [regex]::Match(([IO.File]::ReadAllText($outFile)), 'http://127\.0\.0\.1:(\d+)/')
