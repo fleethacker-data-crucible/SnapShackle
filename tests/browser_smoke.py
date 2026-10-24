@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 image = Image.new('RGB', (900, 580), '#f3f5fa')
 draw = ImageDraw.Draw(image)
 draw.rectangle((50, 45, 400, 300), fill='#38bde1', outline='#1c4c64', width=4)
-draw.text((60, 70), 'SNIPHERO TEST IMAGE', fill='#121a28')
+draw.text((60, 70), 'LASSO TEST IMAGE', fill='#121a28')
 stream = io.BytesIO()
 image.save(stream, 'PNG')
 image_b64 = base64.b64encode(stream.getvalue()).decode()
@@ -26,10 +26,10 @@ MOCK = r"""(imageBase64) => {
     if(url.startsWith('/api/screens'))return json({screens:[{name:'TEST',primary:true}]});
     if(url.startsWith('/api/windows'))return json({windows:[{Title:'Mock window',Id:123}]});
     if(url.startsWith('/api/capture')||url.startsWith('/api/region'))return new Response(bytes,{status:200,headers:{'Content-Type':'image/png','Server-Timing':'acquire;dur=11.2, encode;dur=25.4, selection;dur=0'}});
-    if(url.startsWith('/api/library')&&options.method==='POST'){window.__library=bytes;return json({name:'SnipHero-Mock.png'})}
-    if(url.startsWith('/api/thumb/SnipHero-')){window.__thumbRequests=(window.__thumbRequests||0)+1;return new Response(bytes,{status:200,headers:{'Content-Type':'image/jpeg'}})}
-    if(url.startsWith('/api/library/SnipHero-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
-    if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'SnipHero-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
+    if(url.startsWith('/api/library')&&options.method==='POST'){window.__library=bytes;return json({name:'Lasso-Mock.png'})}
+    if(url.startsWith('/api/thumb/Lasso-')){window.__thumbRequests=(window.__thumbRequests||0)+1;return new Response(bytes,{status:200,headers:{'Content-Type':'image/jpeg'}})}
+    if(url.startsWith('/api/library/Lasso-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
+    if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'Lasso-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
     if(url.startsWith('/api/ocr'))return json({error:'Unavailable'},501);
     return json({error:'not found'},404);
   };

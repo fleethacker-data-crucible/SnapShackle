@@ -1,6 +1,6 @@
 # Optional Windows 10/11 native OCR. Uses WinRT if exposed by installed PowerShell runtime.
 # Intentionally makes no network calls and does not require downloaded OCR models.
-function Test-SnipOcr {
+function Test-LassoOcr {
     if ($PSVersionTable.PSEdition -ne 'Desktop') { return $false }
     try {
         Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction Stop
@@ -8,7 +8,7 @@ function Test-SnipOcr {
         return ($null -ne $type::TryCreateFromUserProfileLanguages())
     } catch { return $false }
 }
-function Wait-SnipWinRt([object]$Operation, [Type]$ResultType) {
+function Wait-LassoWinRt([object]$Operation, [Type]$ResultType) {
     # PowerShell 5.1 cannot await IAsyncOperation<T> directly. Use WinRT AsTask<T>.
     $method = [System.WindowsRuntimeSystemExtensions].GetMethods() |
         Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 } |
@@ -17,8 +17,8 @@ function Wait-SnipWinRt([object]$Operation, [Type]$ResultType) {
     $task = $method.MakeGenericMethod(@($ResultType)).Invoke($null, @($Operation))
     $task.GetAwaiter().GetResult()
 }
-function Invoke-SnipOcr([byte[]]$PngBytes) {
-    if (-not (Test-SnipOcr)) { throw 'Windows native OCR is not available in this PowerShell runtime' }
+function Invoke-LassoOcr([byte[]]$PngBytes) {
+    if (-not (Test-LassoOcr)) { throw 'Windows native OCR is not available in this PowerShell runtime' }
     $filePath = Join-Path $env:TEMP ('SnipHero-Ocr-' + [guid]::NewGuid().ToString('N') + '.png')
     [IO.File]::WriteAllBytes($filePath, $PngBytes)
     $stream = $null; $bitmap = $null
@@ -29,12 +29,12 @@ function Invoke-SnipOcr([byte[]]$PngBytes) {
         $bitmapType = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
         $ocrType = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
         $resultType = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType=WindowsRuntime]
-        $file = Wait-SnipWinRt ($storageType::GetFileFromPathAsync($filePath)) $storageType
-        $stream = Wait-SnipWinRt ($file.OpenReadAsync()) $streamType
-        $decoder = Wait-SnipWinRt ($decoderType::CreateAsync($stream)) $decoderType
-        $bitmap = Wait-SnipWinRt ($decoder.GetSoftwareBitmapAsync()) $bitmapType
+        $file = Wait-LassoWinRt ($storageType::GetFileFromPathAsync($filePath)) $storageType
+        $stream = Wait-LassoWinRt ($file.OpenReadAsync()) $streamType
+        $decoder = Wait-LassoWinRt ($decoderType::CreateAsync($stream)) $decoderType
+        $bitmap = Wait-LassoWinRt ($decoder.GetSoftwareBitmapAsync()) $bitmapType
         $engine = $ocrType::TryCreateFromUserProfileLanguages()
-        $result = Wait-SnipWinRt ($engine.RecognizeAsync($bitmap)) $resultType
+        $result = Wait-LassoWinRt ($engine.RecognizeAsync($bitmap)) $resultType
         return [string]$result.Text
     } finally {
         if ($null -ne $bitmap) { $bitmap.Dispose() }
