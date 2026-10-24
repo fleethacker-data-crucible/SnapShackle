@@ -2,10 +2,10 @@
 from pathlib import Path
 import re
 p=Path(__file__).resolve().parents[1]
-launcher=(p/'Lasso.bat').read_text()
-host=(p/'Start-Lasso.ps1').read_text()
-module=(p/'modules/LocalHttp.ps1').read_text()
-js=(p/'assets/studio.js').read_text()
+launcher=(p/'Lasso.bat').read_text(encoding='utf-8')
+host=(p/'Start-Lasso.ps1').read_text(encoding='utf-8')
+module=(p/'modules/LocalHttp.ps1').read_text(encoding='utf-8')
+js=(p/'assets/studio.js').read_text(encoding='utf-8')
 assert 'powershell.exe' in launcher.lower()
 assert '-NoProfile' in launcher and '-STA' in launcher
 assert '-ExecutionPolicy Bypass' in launcher
