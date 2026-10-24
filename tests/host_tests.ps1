@@ -5,6 +5,14 @@
   Usage: powershell -NoProfile -File tests/host_tests.ps1
 #>
 $ErrorActionPreference = 'Stop'
+# On GitHub Actions, failures are also reported as annotations so they show on the PR checks.
+$script:onActions = $env:GITHUB_ACTIONS -eq 'true'
+function Write-Failure([string]$Text) {
+    Write-Host $Text -ForegroundColor Red
+    if ($script:onActions) { Write-Host ('::error title=host_tests::' + ($Text -replace "`r?`n", ' ')) }
+}
+trap { Write-Failure ('Unhandled error: ' + $_.Exception.Message + ' at ' + $_.InvocationInfo.PositionMessage); exit 1 }
+Write-Host ('PowerShell ' + $PSVersionTable.PSVersion + ' ' + $PSVersionTable.PSEdition)
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 . (Join-Path $root 'modules/LocalHttp.ps1')
 . (Join-Path $root 'modules/Migration.ps1')
@@ -13,7 +21,7 @@ $script:failures = 0
 $script:passes = 0
 function Test-Case([string]$Name, [scriptblock]$Body) {
     try { & $Body; $script:passes++; Write-Host "PASS  $Name" }
-    catch { $script:failures++; Write-Host "FAIL  $Name :: $($_.Exception.Message)" -ForegroundColor Red }
+    catch { $script:failures++; Write-Failure "FAIL  $Name :: $($_.Exception.Message)" }
 }
 function Assert-True($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 
