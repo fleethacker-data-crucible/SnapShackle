@@ -22,6 +22,12 @@ $occupiedPort = ([Net.IPEndPoint]$sentinel.LocalEndpoint).Port
 $outFile = Join-Path $env:TEMP ('Lasso-stdout-' + [guid]::NewGuid().ToString('N') + '.txt')
 $errFile = Join-Path $env:TEMP ('Lasso-stderr-' + [guid]::NewGuid().ToString('N') + '.txt')
 $child = $null
+# The host still has its redirected output open for writing, so read with shared access.
+function Read-SharedText([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return '' }
+    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+    try { return [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
+}
 try {
     $arg = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "' + $hostScript + '" -NoBrowser -Port ' + $occupiedPort + ' -PortScanCount 4'
     $child = Start-Process -FilePath $psExe -ArgumentList $arg -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile -WindowStyle Hidden
@@ -29,12 +35,12 @@ try {
     for ($i=0; $i -lt 300; $i++) {
         Start-Sleep -Milliseconds 100
         if (Test-Path $outFile) {
-            $m = [regex]::Match(([IO.File]::ReadAllText($outFile)), 'http://127\.0\.0\.1:(\d+)/')
+            $m = [regex]::Match((Read-SharedText $outFile), 'http://127\.0\.0\.1:(\d+)/')
             if ($m.Success) { $url = $m.Value; break }
         }
-        if ($child.HasExited) { throw ('Host exited unexpectedly: ' + ([IO.File]::ReadAllText($errFile))) }
+        if ($child.HasExited) { throw ('Host exited unexpectedly: ' + (Read-SharedText $errFile)) }
     }
-    if (-not $url) { throw ('Host did not announce its URL. Errors: ' + ([IO.File]::ReadAllText($errFile))) }
+    if (-not $url) { throw ('Host did not announce its URL. Errors: ' + (Read-SharedText $errFile)) }
     if ($url -eq ('http://127.0.0.1:' + $occupiedPort + '/')) { throw 'Lasso attempted to reuse an occupied port' }
     if (-not $sentinel.Server.IsBound) { throw 'Existing server was disrupted' }
     $page = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 10
