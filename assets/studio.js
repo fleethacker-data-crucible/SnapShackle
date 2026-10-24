@@ -1,16 +1,17 @@
-/* SnipHero Studio controller — browser APIs and local-only PowerShell routes. */
+/* Lasso Studio controller — browser APIs and local-only PowerShell routes. */
 (() => {
 'use strict';
 const $=selector=>document.querySelector(selector);
 const TOKEN='__SESSION_TOKEN__';
-const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnipHero-Token':TOKEN}});
+const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-Lasso-Token':TOKEN}});
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'SnipHero',autoLibrary:false,recordFps:6};
-try {settings={...settings,...JSON.parse(localStorage.getItem('sniphero-settings')||'{}')}}catch{}
+let settings={namePrefix:'Lasso',autoLibrary:false,recordFps:6};
+// Read SnipHero-era settings once so a rename does not reset preferences.
+try {const saved=localStorage.getItem('lasso-settings')??localStorage.getItem('sniphero-settings');settings={...settings,...JSON.parse(saved||'{}')};if(settings.namePrefix==='SnipHero')settings.namePrefix='Lasso'}catch{}
 function notify(message){$('#status').textContent=message}
-function fail(error){console.error('[SnipHero]',error);notify('⚠ '+(error?.message||error))}
-function sanitizePrefix(s){return (s||'SnipHero').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'SnipHero'}
+function fail(error){console.error('[Lasso]',error);notify('⚠ '+(error?.message||error))}
+function sanitizePrefix(s){return (s||'Lasso').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'Lasso'}
 function downloadName(extension){return `${sanitizePrefix(settings.namePrefix)}-${new Date().toISOString().replace(/[:.]/g,'-')}.${extension}`}
 function download(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),20000)}
 function fileDataURL(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file)})}
@@ -18,7 +19,7 @@ function setFileName(name){$('#fileName').textContent=name||'Untitled image'}
 function fitZoom(){const area=$('#canvasScroller');let fit=Math.max(25,Math.min(100,Math.floor((area.clientWidth-80)/canvas.width*100/5)*5));setZoom(fit)}
 function setZoom(z){z=Math.max(25,Math.min(200,Number(z)||100));$('#zoom').value=z;$('#zoomLabel').textContent=z+'%';canvas.style.width=(canvas.width*z/100)+'px';canvas.style.height=(canvas.height*z/100)+'px'}
 let lastLayersSignature='',lastCaptureTiming='No capture timed yet';
-const editor=new SnipHeroEditor(canvas,(instance)=>{
+const editor=new LassoEditor(canvas,(instance)=>{
   $('#dims').textContent=instance.canvas.width+' × '+instance.canvas.height;
   // Pointer movement redraws the canvas frequently. Rebuild layer buttons ONLY when
   // their contents or the selected layer changed, not for every pen/drag frame.
@@ -59,7 +60,7 @@ async function capture(endpoint){
   const native=Number.isFinite(timing.acquire)?`native ${Math.round(timing.acquire)} ms, PNG ${Math.round(timing.encode||0)} ms, `:'';
   const select=timing.selection>0?` (includes ${Math.round(timing.selection)} ms choosing region)`:'';
   lastCaptureTiming=`${native}request/transfer ${transfer} ms, browser display ${decode} ms, ${Math.round(ready-start)} ms overall${select}`;
-  console.info('[SnipHero] capture timing:',lastCaptureTiming,'image size:',Math.round(blob.size/1024),'KiB');
+  console.info('[Lasso] capture timing:',lastCaptureTiming,'image size:',Math.round(blob.size/1024),'KiB');
   const diagnostic=$('#diagnostics');
   if(diagnostic)diagnostic.textContent=diagnostic.textContent.replace(/Last screenshot:[^\n]*/, 'Last screenshot: '+lastCaptureTiming);
   notify('Screenshot ready · '+lastCaptureTiming);
@@ -88,7 +89,7 @@ $('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in p
 $('#zoom').oninput=e=>setZoom(e.target.value);$('#zoomFit').onclick=fitZoom;
 $('#clear').onclick=()=>loadImage('data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="white"/></svg>'),'Blank image').catch(fail);
 $('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(!f.type.startsWith('image/'))throw Error('Choose an image file');await loadImage(f,f.name)}}catch(ex){fail(ex)}finally{e.target.value=''}};
-$('#projectSave').onclick=async()=>{try{const project=await editor.portableProject();download(new Blob([JSON.stringify(project)],{type:'application/json'}),downloadName('sniphero.json'))}catch(e){fail(e)}};
+$('#projectSave').onclick=async()=>{try{const project=await editor.portableProject();download(new Blob([JSON.stringify(project)],{type:'application/json'}),downloadName('lasso.json'))}catch(e){fail(e)}};
 $('#projectOpen').onclick=()=>$('#projectFile').click();$('#projectFile').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(f.size>60_000_000)throw Error('Project file too large');await editor.load(JSON.parse(await f.text()));setFileName(f.name);fitZoom();notify('Editable project loaded')}}catch(ex){fail(ex)}finally{e.target.value=''}};
 $('#png').onclick=()=>editor.export('image/png').then(b=>{download(b,downloadName('png'));notify('PNG exported')}).catch(fail);
 $('#jpg').onclick=()=>editor.export('image/jpeg').then(b=>{download(b,downloadName('jpg'));notify('JPEG exported')}).catch(fail);
@@ -106,7 +107,7 @@ function queueThumbnail(image,name,generation){
   pumpThumbnails();
 }
 function pumpThumbnails(){
-  // Limit competing requests on SnipHero's single-threaded local server.
+  // Limit competing requests on Lasso's single-threaded local server.
   while(thumbnailActive<2&&thumbnailQueue.length){
     const job=thumbnailQueue.shift();if(job.generation!==thumbnailGeneration||!job.image.isConnected)continue;
     thumbnailActive++;
@@ -162,7 +163,7 @@ $('#record').onclick=async()=>{
 $('#gif').onclick=async()=>{
  if(recorder||scrollInterval)return notify('Finish video or scrolling capture before recording GIF');
  if(gifInterval){clearInterval(gifInterval);gifInterval=null;recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;
-   try{if(!gifFrames.length)throw Error('No recorded GIF frames');let blob=SnipGif.encode(gifFrames,gifCanvas.width,gifCanvas.height,Math.round(1000/settings.recordFps));download(blob,downloadName('gif'));notify('Animated GIF exported · '+gifFrames.length+' frames')}catch(e){fail(e)}finally{gifFrames=[];$('#gif').innerHTML='◉ <span>GIF</span>'}return}
+   try{if(!gifFrames.length)throw Error('No recorded GIF frames');let blob=LassoGif.encode(gifFrames,gifCanvas.width,gifCanvas.height,Math.round(1000/settings.recordFps));download(blob,downloadName('gif'));notify('Animated GIF exported · '+gifFrames.length+' frames')}catch(e){fail(e)}finally{gifFrames=[];$('#gif').innerHTML='◉ <span>GIF</span>'}return}
  try{recordStream=await getSharedScreen();const video=await videoFor(recordStream);gifCanvas=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth,480/video.videoHeight);gifCanvas.width=Math.max(2,Math.round(video.videoWidth*scale));gifCanvas.height=Math.max(2,Math.round(video.videoHeight*scale));
    gifFrames=[];const ctx=gifCanvas.getContext('2d',{willReadFrequently:true});for(let track of recordStream.getVideoTracks())track.onended=()=>{if(gifInterval)$('#gif').click()};
    gifInterval=setInterval(()=>{if(gifFrames.length>=100){$('#gif').click();return}ctx.drawImage(video,0,0,gifCanvas.width,gifCanvas.height);gifFrames.push(ctx.getImageData(0,0,gifCanvas.width,gifCanvas.height).data.slice());notify('GIF recording · '+gifFrames.length+'/100 frames')},1000/settings.recordFps);
@@ -195,7 +196,7 @@ $('#scrollAuto').onclick=async()=>{
  }catch(e){scrollStream?.getTracks().forEach(t=>t.stop());scrollStream=null;fail(e)}
 };
 $('#scrollAdd').onclick=async()=>{try{if(stitchTiles.length>=35)throw Error('Maximum 35 tiles');const blob=await editor.export();stitchTiles.push(await createImageBitmap(blob));$('#stitchCount').textContent=stitchTiles.length+' tiles queued';notify('Tile '+stitchTiles.length+' added — scroll the target and capture again')}catch(e){fail(e)}};
-$('#scrollFinish').onclick=async()=>{try{let result=await SnipStitch.stitch(stitchTiles,{autoOverlap:$('#alignOverlap').checked});for(let im of stitchTiles)im.close?.();stitchTiles=[];$('#stitchCount').textContent='0 tiles queued';await loadImage(result.canvas.toDataURL('image/png'),'Long screenshot');notify('Stitched '+result.overlaps.length+' tiles · overlap removed '+result.overlaps.reduce((a,b)=>a+b,0)+' px')}catch(e){fail(e)}};
+$('#scrollFinish').onclick=async()=>{try{let result=await LassoStitch.stitch(stitchTiles,{autoOverlap:$('#alignOverlap').checked});for(let im of stitchTiles)im.close?.();stitchTiles=[];$('#stitchCount').textContent='0 tiles queued';await loadImage(result.canvas.toDataURL('image/png'),'Long screenshot');notify('Stitched '+result.overlaps.length+' tiles · overlap removed '+result.overlaps.reduce((a,b)=>a+b,0)+' px')}catch(e){fail(e)}};
 $('#ocr').onclick=async()=>{try{
     const blob=await editor.export(),response=await api('/api/ocr',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
     if(response.ok){let result=await response.json();$('#ocrText').value=result.text||'';notify('Windows native OCR complete');return}
@@ -204,7 +205,7 @@ $('#ocr').onclick=async()=>{try{
     let image=await createImageBitmap(blob);const lines=await new TextDetector().detect(image);$('#ocrText').value=lines.map(x=>x.rawValue).join('\n');notify('Browser OCR complete');
   }catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));localStorage.setItem('sniphero-settings',JSON.stringify(settings));notify('Preferences saved')};
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{};notify('Preferences saved')};
 $('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;
 document.addEventListener('keydown',event=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
