@@ -1,5 +1,6 @@
 """Chromium interactions against a mocked local API (no Windows needed)."""
 import base64
+import os
 import io
 import re
 from pathlib import Path
@@ -36,7 +37,7 @@ MOCK = r"""(imageBase64) => {
 }"""
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+    browser = p.chromium.launch(headless=True, executable_path=os.environ.get('LASSO_CHROMIUM') or None, args=['--no-sandbox'])
     page = browser.new_page(viewport={'width':1440,'height':950}, accept_downloads=True)
     errors = []
     page.on('pageerror', lambda error:errors.append(str(error)))
