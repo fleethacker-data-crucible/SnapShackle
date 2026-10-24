@@ -37,6 +37,7 @@ Captures live under `%LOCALAPPDATA%\Lasso\Captures`. On first start, Lasso **mov
 
 - **Find sensitive info** (Workflows tab) reads the image with OCR and lists emails, SSNs, card numbers (Luhn-checked), DoD IDs (10 digits), US phone numbers and IPv4 addresses. Untick anything you want to keep, then **Redact checked** covers the rest with solid boxes in one undo step. **Redact every instance of** covers a word or phrase wherever OCR finds it. OCR can miss small or stylised text, so check the image before you share it.
 - **Search by the text in your screenshots.** Captures saved to the library (and hotkey captures) are OCR-indexed in their `.meta.json` sidecar, and library search matches that text as well as names, tags and notes. Results found through the image text say so. Editing tags or notes keeps the index.
+- **Drag-to-crop** (the Crop tool) trims the image and moves every annotation with it, so arrows, text and redactions stay editable. Undo restores the full image. The old Crop button (exact pixel values) works the same way; neither flattens annotations any more.
 - **Preferences are stored by the host** in `%LOCALAPPDATA%\Lasso\settings.json`. The browser keys its storage by origin, and the origin includes the port, so a port fallback used to start with empty preferences.
 
 ## Capturing without the studio in the way (v0.9)
