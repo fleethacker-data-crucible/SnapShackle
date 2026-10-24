@@ -1,0 +1,35 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host tests (Windows PowerShell 5.1)
+        shell: cmd
+        run: '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo -ExecutionPolicy Bypass -File tests\host_tests.ps1'
+      - name: Static checks
+        shell: python
+        run: |
+          import runpy
+          runpy.run_path('tests/static_check.py')
+          runpy.run_path('tests/launcher_static_check.py')
+      - name: JavaScript syntax
+        shell: pwsh
+        run: |
+          if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Host 'node not installed; skipping'; exit 0 }
+          Get-ChildItem assets\*.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { exit 1 } }
+      - name: Loopback port fallback (real Windows sockets)
+        shell: cmd
+        run: '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\windows_port_smoke.ps1'
+      - name: Native capture benchmark
+        # Needs an interactive desktop. A runner installed as a service has none, so this step may be skipped.
+        continue-on-error: true
+        shell: cmd
+        run: '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\windows_capture_perf.ps1 -DesktopCapture'
