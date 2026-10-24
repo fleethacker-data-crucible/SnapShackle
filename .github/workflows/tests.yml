@@ -17,9 +17,14 @@ jobs:
       - name: Static checks
         shell: python
         run: |
-          import runpy
-          runpy.run_path('tests/static_check.py')
-          runpy.run_path('tests/launcher_static_check.py')
+          import runpy, sys, traceback
+          for script in ('tests/static_check.py', 'tests/launcher_static_check.py'):
+              try:
+                  runpy.run_path(script, run_name='__main__')
+              except BaseException as error:
+                  traceback.print_exc()
+                  print(f'::error title={script}::{type(error).__name__}: {error}')
+                  sys.exit(1)
       - name: JavaScript syntax
         shell: pwsh
         run: |
