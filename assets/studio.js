@@ -80,10 +80,12 @@ $('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose a
 async function getSharedScreen(){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia({video:{frameRate:settings.recordFps},audio:false})}
 async function videoFor(stream){let video=document.createElement('video');video.srcObject=stream;video.muted=true;await video.play();if(!video.videoWidth)await new Promise(r=>setTimeout(r,400));return video}
 $('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(await new Promise(resolve=>temp.toBlob(resolve,'image/png')),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
-const toolNames={select:'↖ Select',arrow:'↗ Arrow',rectangle:'▢ Rectangle',ellipse:'◯ Ellipse',line:'╱ Line',pen:'✎ Pen',highlight:'▰ Highlight',text:'T Text',step:'① Steps',redact:'■ Redact',pixelate:'▦ Pixelate',blur:'◍ Blur'};
+const toolNames={select:'↖ Select',arrow:'↗ Arrow',rectangle:'▢ Rectangle',ellipse:'◯ Ellipse',line:'╱ Line',pen:'✎ Pen',highlight:'▰ Highlight',text:'T Text',step:'① Steps',crop:'⌗ Crop',redact:'■ Redact',pixelate:'▦ Pixelate',blur:'◍ Blur'};
 for(let [tool,title] of Object.entries(toolNames)){let button=document.createElement('button');button.className='tool';let parts=title.split(' ');button.innerHTML='<span class="tool-symbol">'+parts.shift()+'</span><span>'+parts.join(' ')+'</span>';button.title=title;button.dataset.tool=tool;
   button.onclick=()=>{editor.tool=tool;for(let b of $('#tools').children)b.classList.toggle('active',b===button);notify('Tool: '+title)};$('#tools').append(button)}
 $('#tools').firstElementChild.click();
+// Drag-to-crop keeps annotations editable; afterwards the select tool comes back.
+editor.onCrop=(instance,error)=>{if(error)return fail(error);setFileName('Cropped image');fitZoom();$('#tools [data-tool="select"]').click();notify(`Cropped to ${canvas.width} × ${canvas.height} · annotations kept · Ctrl+Z to undo`)};
 $('#color').oninput=e=>{editor.color=e.target.value;$('#colorHex').textContent=e.target.value.toUpperCase()};
 $('#width').oninput=e=>{editor.width=+e.target.value;$('#widthLabel').textContent=editor.width+' px'};
 $('#font').oninput=e=>{editor.font=+e.target.value;$('#fontLabel').textContent=editor.font+' px'};
@@ -91,7 +93,7 @@ $('#undo').onclick=()=>editor.undo().catch(fail);$('#redo').onclick=()=>editor.r
 $('#deleteObject').onclick=()=>editor.deleteSelected();$('#duplicate').onclick=()=>editor.duplicateSelected();
 $('#forward').onclick=()=>editor.layerSelected(1);$('#backward').onclick=()=>editor.layerSelected(-1);
 $('#editText').onclick=()=>{const selected=editor.objects[editor.selected];if(!selected||!['text','step'].includes(selected.type))return notify('Select a text or step annotation first');const s=prompt('Edit annotation text',selected.text);if(s!==null)editor.changeSelected(o=>o.text=s)};
-$('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in pixels',`0, 0, ${canvas.width}, ${canvas.height}`);if(!entry)return;const parts=entry.split(',').map(Number);if(parts.length!==4||parts.some(v=>!Number.isFinite(v)))return notify('Invalid crop coordinates');editor.crop(...parts).then(()=>{setFileName('Cropped image');fitZoom();notify('Image cropped')}).catch(fail)};
+$('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in pixels',`0, 0, ${canvas.width}, ${canvas.height}`);if(!entry)return;const parts=entry.split(',').map(Number);if(parts.length!==4||parts.some(v=>!Number.isFinite(v)))return notify('Invalid crop coordinates');editor.crop(...parts).then(()=>{setFileName('Cropped image');fitZoom();notify('Image cropped · annotations kept')}).catch(fail)};
 $('#zoom').oninput=e=>setZoom(e.target.value);$('#zoomFit').onclick=fitZoom;
 $('#clear').onclick=()=>loadImage('data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="white"/></svg>'),'Blank image').catch(fail);
 $('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(!f.type.startsWith('image/'))throw Error('Choose an image file');await loadImage(f,f.name)}}catch(ex){fail(ex)}finally{e.target.value=''}};
