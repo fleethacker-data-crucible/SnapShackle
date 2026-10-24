@@ -31,7 +31,7 @@ MOCK = r"""(imageBase64) => {
     if(url.startsWith('/api/thumb/Lasso-')){window.__thumbRequests=(window.__thumbRequests||0)+1;return new Response(bytes,{status:200,headers:{'Content-Type':'image/jpeg'}})}
     if(url.startsWith('/api/library/Lasso-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
     if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'Lasso-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
-    if(url.startsWith('/api/ocr'))return json({error:'Unavailable'},501);
+    if(url.startsWith('/api/ocr'))return json({text:'Contact j.smith@navy.mil or 757-555-0142 Nautilus',engine:'mock',lines:[{text:'Contact j.smith@navy.mil or 757-555-0142',words:[{text:'Contact',x:60,y:100,w:70,h:20},{text:'j.smith@navy.mil',x:140,y:100,w:160,h:20},{text:'or',x:310,y:100,w:20,h:20},{text:'757-555-0142',x:340,y:100,w:120,h:20}]},{text:'Nautilus',words:[{text:'Nautilus',x:60,y:200,w:80,h:20}]}]});
     if(url.startsWith('/api/events'))return json(window.__hotkey?{events:[{id:7,type:'capture',name:'Lasso-Hot.png',source:'region'}],latest:7}:{events:[],latest:3});
     return json({error:'not found'},404);
   };
@@ -42,13 +42,15 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={'width':1440,'height':950}, accept_downloads=True)
     errors = []
     page.on('pageerror', lambda error:errors.append(str(error)))
-    html = (ROOT/'index.html').read_text()
+    html = (ROOT/'index.html').read_text(encoding='utf-8')
+    # Load the same scripts, in the same order, as the real page.
+    scripts = re.findall(r'<script[^>]*src="/assets/([a-z]+)\.js"', html)
     html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
     html = re.sub(r'<link[^>]*stylesheet[^>]*>', '', html)
     page.set_content(html)
     page.add_style_tag(path=str(ROOT/'assets/styles.css'))
     page.evaluate(MOCK, image_b64)
-    for name in ['editor','gif','stitch','studio']:
+    for name in scripts:
         page.add_script_tag(path=str(ROOT/'assets'/f'{name}.js'))
 
     assert page.locator('#tools button').count()==12, 'Tools failed to initialize'
@@ -107,7 +109,26 @@ with sync_playwright() as p:
     page.evaluate('window.__hotkey=true')
     page.wait_for_function('document.querySelector("#status").textContent.includes("Hotkey capture opened")', timeout=6000)
     assert page.evaluate("document.querySelector('#canvas').width")==900, 'Hotkey capture was not loaded'
+    # Smart redaction: find, untick nothing, apply; then redact a typed word.
+    page.locator('#tabLayers').click()
+    before = page.locator('#layers button').count()
+    page.locator('#tabWorkflows').click()
+    page.locator('#redactFind').click()
+    page.wait_for_function('document.querySelectorAll("#redactFindings input").length===2', timeout=6000)
+    assert 'Redact 2 checked' in page.locator('#redactApply').inner_text()
+    page.locator('#redactApply').click()
+    page.locator('#tabLayers').click()
+    assert page.locator('#layers button').count() == before + 2, 'redactions not added'
+    pixel = page.evaluate("Array.from(document.querySelector('#canvas').getContext('2d').getImageData(220,110,1,1).data.slice(0,3))")
+    assert pixel == [11, 11, 13], f'email not covered by a solid box: {pixel}'
+    page.locator('#undo').click()
+    page.wait_for_timeout(50)
+    assert page.locator('#layers button').count() == before, 'undo did not remove both redactions in one step'
+    page.locator('#tabWorkflows').click()
+    page.locator('#redactTerm').fill('nautilus')
+    page.locator('#redactTermApply').click()
+    page.wait_for_function('document.querySelector("#status").textContent.includes("Redacted 1 instance")', timeout=6000)
     assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff')
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction')
     page.screenshot(path=str(ROOT/'tests/preview.png'), full_page=True)
     browser.close()

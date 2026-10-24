@@ -121,6 +121,8 @@ class LassoEditor {
     this.canvas.addEventListener('pointercancel',()=>{if(this.drag){if(this.drag.kind!=='draw')this.objects[this.selected]=this.drag.original;this.drag=null;this.render()}});
   }
   changeSelected(mutator){if(this.selected<0)return;const before=this.state();mutator(this.objects[this.selected]);this.saveHistory(before);this.render()}
+  // Adds several objects as one undoable step (used by smart redaction).
+  addObjects(list){if(!list?.length)return 0;const before=this.state();for(const o of list)this.objects.push(o);this.selected=-1;this.saveHistory(before);this.render();return list.length}
   deleteSelected(){if(this.selected<0)return;let before=this.state();this.objects.splice(this.selected,1);this.selected=-1;this.saveHistory(before);this.render()}
   duplicateSelected(){if(this.selected<0)return;let before=this.state(),o=clone(this.objects[this.selected]);this.translate(o,22,22);this.objects.push(o);this.selected=this.objects.length-1;this.saveHistory(before);this.render()}
   layerSelected(delta){let i=this.selected,j=i+delta;if(i<0||j<0||j>=this.objects.length)return;let before=this.state();[this.objects[i],this.objects[j]]=[this.objects[j],this.objects[i]];this.selected=j;this.saveHistory(before);this.render()}
