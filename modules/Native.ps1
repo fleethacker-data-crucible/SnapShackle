@@ -185,7 +185,7 @@ namespace Lasso {
    if(!sel.IsEmpty){
     g.DrawImage(shot,sel,sel,GraphicsUnit.Pixel);
     using(var pen=new Pen(Color.FromArgb(255,73,98),2)){g.DrawRectangle(pen,sel.X,sel.Y,sel.Width-1,sel.Height-1);}
-    string label=sel.Width+" × "+sel.Height+(dragging?"":"  ·  click to capture window");
+    string label=sel.Width+" \u00D7 "+sel.Height+(dragging?"":"  \u00B7  click to capture window");
     DrawTag(g,label,new Point(sel.X,Math.Max(0,sel.Y-26)));
    }
    DrawLoupe(g);
@@ -205,7 +205,7 @@ namespace Lasso {
    g.DrawImage(shot,img,src,GraphicsUnit.Pixel);
    g.InterpolationMode=InterpolationMode.Default;g.PixelOffsetMode=PixelOffsetMode.Default;
    using(var pen=new Pen(Color.FromArgb(255,73,98),1)){g.DrawRectangle(pen,img.X+(LoupeCells/2)*LoupeZoom,img.Y+(LoupeCells/2)*LoupeZoom,LoupeZoom,LoupeZoom);g.DrawRectangle(pen,box.X,box.Y,box.Width-1,box.Height-1);}
-   string hex="—";
+   string hex="-";
    if(cursor.X>=0&&cursor.Y>=0&&cursor.X<shot.Width&&cursor.Y<shot.Height){var c=shot.GetPixel(cursor.X,cursor.Y);hex="#"+c.R.ToString("X2")+c.G.ToString("X2")+c.B.ToString("X2");}
    using(var font=new Font("Segoe UI",8.5f)){
     g.DrawString((cursor.X+Left)+", "+(cursor.Y+Top),font,Brushes.White,box.X+6,box.Y+LoupeSize+5);
