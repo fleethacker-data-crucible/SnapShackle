@@ -48,5 +48,5 @@ async function stitch(tiles,{autoOverlap=true,maxPixels=90000000}={}){
   }
   return {canvas,overlaps,width,height};
 }
-window.SnipStitch={stitch};
+window.LassoStitch={stitch};
 })();
