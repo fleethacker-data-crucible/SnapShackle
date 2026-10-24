@@ -29,7 +29,7 @@ function Read-SharedText([string]$Path) {
     try { return [IO.StreamReader]::new($stream).ReadToEnd() } finally { $stream.Dispose() }
 }
 try {
-    $arg = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "' + $hostScript + '" -NoBrowser -Port ' + $occupiedPort + ' -PortScanCount 4'
+    $arg = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File "' + $hostScript + '" -NoBrowser -NoTray -Port ' + $occupiedPort + ' -PortScanCount 4'
     $child = Start-Process -FilePath $psExe -ArgumentList $arg -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile -WindowStyle Hidden
     $url = $null
     for ($i=0; $i -lt 300; $i++) {
