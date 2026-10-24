@@ -2,14 +2,14 @@
 from pathlib import Path
 import re
 p=Path(__file__).resolve().parents[1]
-launcher=(p/'SnipHero.bat').read_text()
-host=(p/'Start-SnipHero.ps1').read_text()
+launcher=(p/'Lasso.bat').read_text()
+host=(p/'Start-Lasso.ps1').read_text()
 module=(p/'modules/LocalHttp.ps1').read_text()
 js=(p/'assets/studio.js').read_text()
 assert 'powershell.exe' in launcher.lower()
 assert '-NoProfile' in launcher and '-STA' in launcher
 assert '-ExecutionPolicy Bypass' in launcher
-assert '%~dp0Start-SnipHero.ps1' in launcher and '%*' in launcher
+assert '%~dp0Start-Lasso.ps1' in launcher and '%*' in launcher
 assert re.search(r'\bDiagnostics\b',host)
 assert '$server.Port' in host and '$server.Accept()' in host
 assert 'http://127.0.0.1:$Port/' in host

@@ -1,7 +1,7 @@
 # Windows native services. Loaded only on Windows; no installation or administrator rights required.
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-if (-not ('SnipHero.Native' -as [type])) {
+if (-not ('Lasso.Native' -as [type])) {
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
 using System.Text;
@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
-namespace SnipHero {
+namespace Lasso {
  public struct RECT { public int Left,Top,Right,Bottom; public int Width {get{return Right-Left;}} public int Height {get{return Bottom-Top;}} }
  public static class Native {
   public delegate bool EnumProc(IntPtr hwnd, IntPtr data);
@@ -37,22 +37,22 @@ namespace SnipHero {
 }
 '@
 }
-try { [SnipHero.Native]::SetProcessDPIAware() | Out-Null } catch {}
-function Get-SnipWindows { @([SnipHero.Native]::Windows() | Select-Object -First 250) }
+try { [Lasso.Native]::SetProcessDPIAware() | Out-Null } catch {}
+function Get-LassoWindows { @([Lasso.Native]::Windows() | Select-Object -First 250) }
 # Timings describe capture/encoding only. Region selection time is recorded separately.
-$script:SnipCaptureStats = @{ acquireMs=0; encodeMs=0; selectionMs=0 }
-function Convert-SnipBitmapToPng([Drawing.Bitmap]$Bitmap, [double]$AcquisitionMs=0, [double]$SelectionMs=0) {
+$script:LassoCaptureStats = @{ acquireMs=0; encodeMs=0; selectionMs=0 }
+function Convert-LassoBitmapToPng([Drawing.Bitmap]$Bitmap, [double]$AcquisitionMs=0, [double]$SelectionMs=0) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     $memory=[IO.MemoryStream]::new()
     try {
         $Bitmap.Save($memory,[Drawing.Imaging.ImageFormat]::Png)
         $result=$memory.ToArray()
         $timer.Stop()
-        $script:SnipCaptureStats=@{ acquireMs=[math]::Round($AcquisitionMs,1); encodeMs=[math]::Round($timer.Elapsed.TotalMilliseconds,1); selectionMs=[math]::Round($SelectionMs,1) }
+        $script:LassoCaptureStats=@{ acquireMs=[math]::Round($AcquisitionMs,1); encodeMs=[math]::Round($timer.Elapsed.TotalMilliseconds,1); selectionMs=[math]::Round($SelectionMs,1) }
         return ,$result
     } finally { $memory.Dispose() }
 }
-function Get-SnipRect([Drawing.Rectangle]$rect) {
+function Get-LassoRect([Drawing.Rectangle]$rect) {
     if ($rect.Width -le 0 -or $rect.Height -le 0 -or ([long]$rect.Width * $rect.Height) -gt 120000000) {
         throw 'Invalid capture dimensions'
     }
@@ -62,10 +62,10 @@ function Get-SnipRect([Drawing.Rectangle]$rect) {
         $timer=[Diagnostics.Stopwatch]::StartNew()
         $gfx.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size,[Drawing.CopyPixelOperation]::SourceCopy)
         $timer.Stop()
-        return Convert-SnipBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
+        return Convert-LassoBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
     } finally { $gfx.Dispose();$bmp.Dispose() }
 }
-function Copy-SnipBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area) {
+function Copy-LassoBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area) {
     if ($Area.Width -le 0 -or $Area.Height -le 0 -or ([long]$Area.Width*$Area.Height) -gt 120000000 -or
         $Area.X -lt 0 -or $Area.Y -lt 0 -or $Area.Right -gt $Original.Width -or $Area.Bottom -gt $Original.Height) {
         throw 'Selection outside captured image'
@@ -73,7 +73,7 @@ function Copy-SnipBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area)
     # GDI+ rectangle clone is a lossless pixel copy and avoids resampling.
     return $Original.Clone($Area,$Original.PixelFormat)
 }
-function Get-SnipRegion {
+function Get-LassoRegion {
     $virtual=[Windows.Forms.SystemInformation]::VirtualScreen
     if ($virtual.Width -le 0 -or $virtual.Height -le 0 -or ([long]$virtual.Width*$virtual.Height) -gt 120000000) { throw 'Desktop exceeds capture limits' }
     $background=[Drawing.Bitmap]::new($virtual.Width,$virtual.Height)
@@ -85,7 +85,7 @@ function Get-SnipRegion {
         $acquireMs=$timer.Elapsed.TotalMilliseconds
     } finally { $gfx.Dispose() }
     try {
-        $overlay=[SnipHero.RegionOverlay]::new($virtual,$background)
+        $overlay=[Lasso.RegionOverlay]::new($virtual,$background)
         $timer=[Diagnostics.Stopwatch]::StartNew()
         try {
             # Do not re-capture the display after selection. Crop the original snapshot;
@@ -94,8 +94,8 @@ function Get-SnipRegion {
             $selected=$overlay.Selection
         } finally { $timer.Stop();$overlay.Dispose() }
         $region=[Drawing.Rectangle]::new($selected.X-$virtual.Left,$selected.Y-$virtual.Top,$selected.Width,$selected.Height)
-        $cropped=Copy-SnipBitmapArea $background $region
-        try { return Convert-SnipBitmapToPng $cropped $acquireMs $timer.Elapsed.TotalMilliseconds }
+        $cropped=Copy-LassoBitmapArea $background $region
+        try { return Convert-LassoBitmapToPng $cropped $acquireMs $timer.Elapsed.TotalMilliseconds }
         finally { $cropped.Dispose() }
     } finally { $background.Dispose() }
 }
