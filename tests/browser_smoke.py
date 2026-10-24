@@ -54,7 +54,7 @@ with sync_playwright() as p:
     for name in scripts:
         page.add_script_tag(path=str(ROOT/'assets'/f'{name}.js'))
 
-    assert page.locator('#tools button').count()==12, 'Tools failed to initialize'
+    assert page.locator('#tools button').count()==13, 'Tools failed to initialize'
     # Verify the capture path avoids Base64 FileReader conversion entirely.
     page.evaluate('''() => { window.__dataUrlReads=0;const original=FileReader.prototype.readAsDataURL;FileReader.prototype.readAsDataURL=function(...args){window.__dataUrlReads++;return original.apply(this,args)}}''')
     page.locator('#capture').click()
@@ -135,7 +135,28 @@ with sync_playwright() as p:
     page.locator('#redactTerm').fill('nautilus')
     page.locator('#redactTermApply').click()
     page.wait_for_function('document.querySelector("#status").textContent.includes("Redacted 1 instance")', timeout=6000)
+    # Drag-to-crop keeps every annotation and moves them with the image.
+    page.locator('#tabLayers').click()
+    layers_before = page.locator('#layers button').count()
+    assert layers_before >= 1
+    page.locator('[data-tool="crop"]').click()
+    box = page.locator('#canvas').bounding_box()
+    scale = box['width'] / page.evaluate("document.querySelector('#canvas').width")
+    page.mouse.move(box['x'] + 50*scale, box['y'] + 90*scale)
+    page.mouse.down()
+    page.mouse.move(box['x'] + 450*scale, box['y'] + 390*scale, steps=5)
+    page.mouse.up()
+    page.wait_for_function('document.querySelector("#status").textContent.includes("annotations kept")', timeout=6000)
+    w, h = page.evaluate("[document.querySelector('#canvas').width, document.querySelector('#canvas').height]")
+    assert abs(w-400) <= 3 and abs(h-300) <= 3, f'crop size {w}x{h}'
+    assert page.locator('#layers button').count() == layers_before, 'crop dropped annotations'
+    # The "Nautilus" redaction drawn at (60..140, 200..220) moved with the crop to about (10..90, 110..130).
+    moved = page.evaluate("Array.from(document.querySelector('#canvas').getContext('2d').getImageData(50,120,1,1).data.slice(0,3))")
+    assert moved == [11, 11, 13], f'annotation did not move with the crop: {moved}'
+    page.locator('#undo').click()
+    page.wait_for_function("document.querySelector('#canvas').width===900", timeout=6000)
+    assert page.locator('#layers button').count() == layers_before, 'undo of crop lost annotations'
     assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings')
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop')
     page.screenshot(path=str(ROOT/'tests/preview.png'), full_page=True)
     browser.close()
