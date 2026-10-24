@@ -203,13 +203,37 @@ $('#scrollAuto').onclick=async()=>{
 };
 $('#scrollAdd').onclick=async()=>{try{if(stitchTiles.length>=35)throw Error('Maximum 35 tiles');const blob=await editor.export();stitchTiles.push(await createImageBitmap(blob));$('#stitchCount').textContent=stitchTiles.length+' tiles queued';notify('Tile '+stitchTiles.length+' added — scroll the target and capture again')}catch(e){fail(e)}};
 $('#scrollFinish').onclick=async()=>{try{let result=await LassoStitch.stitch(stitchTiles,{autoOverlap:$('#alignOverlap').checked});for(let im of stitchTiles)im.close?.();stitchTiles=[];$('#stitchCount').textContent='0 tiles queued';await loadImage(result.canvas.toDataURL('image/png'),'Long screenshot');notify('Stitched '+result.overlaps.length+' tiles · overlap removed '+result.overlaps.reduce((a,b)=>a+b,0)+' px')}catch(e){fail(e)}};
-$('#ocr').onclick=async()=>{try{
-    const blob=await editor.export(),response=await api('/api/ocr',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
-    if(response.ok){let result=await response.json();$('#ocrText').value=result.text||'';notify('Windows native OCR complete');return}
-    const nativeFailure=(await response.json().catch(()=>({}))).error||'Windows OCR failed';
-    if(typeof TextDetector==='undefined')throw Error(nativeFailure+'; browser OCR is also unavailable');
-    let image=await createImageBitmap(blob);const lines=await new TextDetector().detect(image);$('#ocrText').value=lines.map(x=>x.rawValue).join('\n');notify('Browser OCR complete');
-  }catch(e){fail(e)}};
+// OCR the current image (annotations included). Native Windows OCR returns word boxes;
+// the browser fallback returns line boxes only.
+async function recognize(){
+  const blob=await editor.export(),response=await api('/api/ocr',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
+  if(response.ok){const r=await response.json();return {text:r.text||'',lines:r.lines||[],engine:'Windows native OCR'}}
+  const nativeFailure=(await response.json().catch(()=>({}))).error||'Windows OCR failed';
+  if(typeof TextDetector==='undefined')throw Error(nativeFailure+'; browser OCR is also unavailable');
+  const found=await new TextDetector().detect(await createImageBitmap(blob));
+  return {text:found.map(x=>x.rawValue).join('\n'),lines:LassoRedact.fromTextDetector(found),engine:'Browser OCR'};
+}
+$('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
+// Smart redaction: OCR, detect, let the person untick false positives, then cover with solid boxes.
+let redactFindings=[];
+function clampBox(b){return {x:Math.max(0,b.x),y:Math.max(0,b.y),x2:Math.min(canvas.width,b.x2),y2:Math.min(canvas.height,b.y2)}}
+function applyRedactions(boxes){return editor.addObjects(boxes.map(b=>({type:'redact',...clampBox(b)})))}
+function renderFindings(){
+  const root=$('#redactFindings');root.replaceChildren();
+  if(!redactFindings.length){root.textContent='No sensitive text found. OCR can miss small or stylised text.';$('#redactApply').hidden=true;return}
+  redactFindings.forEach((f,i)=>{const row=document.createElement('label');row.className='redact-row';const box=document.createElement('input');box.type='checkbox';box.checked=true;box.dataset.index=i;
+    const kind=document.createElement('b');kind.textContent=f.label;const text=document.createElement('span');text.textContent=f.text.length>36?f.text.slice(0,33)+'…':f.text;row.append(box,kind,text);root.append(row)});
+  $('#redactApply').hidden=false;$('#redactApply').textContent=`Redact ${redactFindings.length} checked`;
+}
+$('#redactFind').onclick=async()=>{try{notify('Reading text…');const r=await recognize();redactFindings=LassoRedact.detect(r.lines);renderFindings();
+  notify(redactFindings.length?`Found ${redactFindings.length} item(s) to redact (${r.engine}). Untick any you want to keep.`:`No sensitive text found (${r.engine})`)}catch(e){fail(e)}};
+$('#redactFindings').onchange=()=>{const n=[...$('#redactFindings').querySelectorAll('input:checked')].length;$('#redactApply').textContent=`Redact ${n} checked`};
+$('#redactApply').onclick=()=>{const picked=[...$('#redactFindings').querySelectorAll('input:checked')].map(x=>redactFindings[+x.dataset.index]);
+  const n=applyRedactions(picked.map(f=>f.box));redactFindings=[];$('#redactFindings').replaceChildren();$('#redactApply').hidden=true;
+  notify(n?`Added ${n} solid redaction box(es). Undo removes them in one step.`:'Nothing selected')};
+$('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.trim();if(!term)return notify('Type a word or phrase to redact');
+  notify('Reading text…');const r=await recognize();const hits=LassoRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
+  notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
 $('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{};notify('Preferences saved')};
 $('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;
