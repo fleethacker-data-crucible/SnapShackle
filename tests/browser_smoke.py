@@ -1,5 +1,6 @@
 """Chromium interactions against a mocked local API (no Windows needed)."""
 import base64
+import os
 import io
 import re
 from pathlib import Path
@@ -31,12 +32,13 @@ MOCK = r"""(imageBase64) => {
     if(url.startsWith('/api/library/Lasso-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
     if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'Lasso-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
     if(url.startsWith('/api/ocr'))return json({error:'Unavailable'},501);
+    if(url.startsWith('/api/events'))return json(window.__hotkey?{events:[{id:7,type:'capture',name:'Lasso-Hot.png',source:'region'}],latest:7}:{events:[],latest:3});
     return json({error:'not found'},404);
   };
 }"""
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+    browser = p.chromium.launch(headless=True, executable_path=os.environ.get('LASSO_CHROMIUM') or None, args=['--no-sandbox'])
     page = browser.new_page(viewport={'width':1440,'height':950}, accept_downloads=True)
     errors = []
     page.on('pageerror', lambda error:errors.append(str(error)))
@@ -100,7 +102,12 @@ with sync_playwright() as p:
     page.wait_for_function('document.querySelectorAll(".capture-card").length>0')
     page.wait_for_function('document.querySelector(".capture-card img").naturalWidth>0')
     assert page.evaluate('window.__thumbRequests')>=1, 'Small thumbnail API was not requested'
+    # A hotkey capture made while the studio was in the background opens automatically.
+    page.evaluate("document.querySelector('#canvas').width=10")
+    page.evaluate('window.__hotkey=true')
+    page.wait_for_function('document.querySelector("#status").textContent.includes("Hotkey capture opened")', timeout=6000)
+    assert page.evaluate("document.querySelector('#canvas').width")==900, 'Hotkey capture was not loaded'
     assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview')
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff')
     page.screenshot(path=str(ROOT/'tests/preview.png'), full_page=True)
     browser.close()
