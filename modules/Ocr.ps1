@@ -1,44 +1,88 @@
 # Optional Windows 10/11 native OCR. Uses WinRT if exposed by installed PowerShell runtime.
-# Intentionally makes no network calls and does not require downloaded OCR models.
+# Makes no network calls, needs no downloaded models, and never writes the image to disk.
+$script:LassoOcrAvailable = $null
 function Test-LassoOcr {
+    if ($null -ne $script:LassoOcrAvailable) { return $script:LassoOcrAvailable }
+    $script:LassoOcrAvailable = $false
     if ($PSVersionTable.PSEdition -ne 'Desktop') { return $false }
     try {
         Add-Type -AssemblyName System.Runtime.WindowsRuntime -ErrorAction Stop
         $type = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
-        return ($null -ne $type::TryCreateFromUserProfileLanguages())
-    } catch { return $false }
+        $script:LassoOcrAvailable = ($null -ne $type::TryCreateFromUserProfileLanguages())
+    } catch { $script:LassoOcrAvailable = $false }
+    return $script:LassoOcrAvailable
 }
+# PowerShell 5.1 cannot await IAsyncOperation<T> directly, so bridge through WindowsRuntimeSystemExtensions.AsTask<T>.
+# Several one-parameter generic AsTask overloads exist (IAsyncOperation<T>, IAsyncActionWithProgress<T>, ...);
+# pick the IAsyncOperation<T> one explicitly instead of whichever comes first.
+$script:LassoAsTask = $null
 function Wait-LassoWinRt([object]$Operation, [Type]$ResultType) {
-    # PowerShell 5.1 cannot await IAsyncOperation<T> directly. Use WinRT AsTask<T>.
-    $method = [System.WindowsRuntimeSystemExtensions].GetMethods() |
-        Where-Object { $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 } |
-        Select-Object -First 1
-    if ($null -eq $method) { throw 'Windows Runtime async bridge is unavailable' }
-    $task = $method.MakeGenericMethod(@($ResultType)).Invoke($null, @($Operation))
+    if ($null -eq $script:LassoAsTask) {
+        $script:LassoAsTask = [System.WindowsRuntimeSystemExtensions].GetMethods() |
+            Where-Object {
+                $_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1 -and
+                $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+            } | Select-Object -First 1
+        if ($null -eq $script:LassoAsTask) { throw 'Windows Runtime async bridge is unavailable' }
+    }
+    $task = $script:LassoAsTask.MakeGenericMethod(@($ResultType)).Invoke($null, @($Operation))
     $task.GetAwaiter().GetResult()
 }
+# Shrinks an image that exceeds the OCR engine's limit. Returns the PNG to recognise and the scale applied.
+function Resize-LassoOcrInput([byte[]]$PngBytes, [int]$MaxDimension) {
+    $source = [IO.MemoryStream]::new($PngBytes, $false)
+    try {
+        $image = [Drawing.Image]::FromStream($source)
+        try {
+            $largest = [Math]::Max($image.Width, $image.Height)
+            if ($largest -le $MaxDimension) { return @{ Bytes = $PngBytes; Scale = 1.0 } }
+            $scale = $MaxDimension / [double]$largest
+            $w = [Math]::Max(1, [int][Math]::Floor($image.Width * $scale))
+            $h = [Math]::Max(1, [int][Math]::Floor($image.Height * $scale))
+            $small = [Drawing.Bitmap]::new($w, $h)
+            $gfx = [Drawing.Graphics]::FromImage($small)
+            try {
+                $gfx.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $gfx.DrawImage($image, 0, 0, $w, $h)
+                $out = [IO.MemoryStream]::new()
+                try { $small.Save($out, [Drawing.Imaging.ImageFormat]::Png); return @{ Bytes = $out.ToArray(); Scale = $scale } }
+                finally { $out.Dispose() }
+            } finally { $gfx.Dispose(); $small.Dispose() }
+        } finally { $image.Dispose() }
+    } finally { $source.Dispose() }
+}
+# Returns the recognised text plus lines and word boxes in the original image's pixel coordinates.
 function Invoke-LassoOcr([byte[]]$PngBytes) {
     if (-not (Test-LassoOcr)) { throw 'Windows native OCR is not available in this PowerShell runtime' }
-    $filePath = Join-Path $env:TEMP ('SnipHero-Ocr-' + [guid]::NewGuid().ToString('N') + '.png')
-    [IO.File]::WriteAllBytes($filePath, $PngBytes)
+    $ocrType = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
+    $decoderType = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
+    $bitmapType = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
+    $resultType = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType=WindowsRuntime]
+    $prepared = Resize-LassoOcrInput $PngBytes ([int]$ocrType::MaxImageDimension)
+    $memory = [IO.MemoryStream]::new([byte[]]$prepared.Bytes, $false)
     $stream = $null; $bitmap = $null
     try {
-        $storageType = [Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime]
-        $streamType = [Windows.Storage.Streams.IRandomAccessStreamWithContentType, Windows.Storage.Streams, ContentType=WindowsRuntime]
-        $decoderType = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
-        $bitmapType = [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics.Imaging, ContentType=WindowsRuntime]
-        $ocrType = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
-        $resultType = [Windows.Media.Ocr.OcrResult, Windows.Foundation, ContentType=WindowsRuntime]
-        $file = Wait-LassoWinRt ($storageType::GetFileFromPathAsync($filePath)) $storageType
-        $stream = Wait-LassoWinRt ($file.OpenReadAsync()) $streamType
+        # In memory only: the screenshot never touches %TEMP%.
+        $stream = [System.IO.WindowsRuntimeStreamExtensions]::AsRandomAccessStream($memory)
         $decoder = Wait-LassoWinRt ($decoderType::CreateAsync($stream)) $decoderType
         $bitmap = Wait-LassoWinRt ($decoder.GetSoftwareBitmapAsync()) $bitmapType
         $engine = $ocrType::TryCreateFromUserProfileLanguages()
         $result = Wait-LassoWinRt ($engine.RecognizeAsync($bitmap)) $resultType
-        return [string]$result.Text
+        $back = 1.0 / [double]$prepared.Scale
+        $lines = @(foreach ($line in $result.Lines) {
+            @{
+                text = [string]$line.Text
+                words = @(foreach ($word in $line.Words) {
+                    $r = $word.BoundingRect
+                    @{ text = [string]$word.Text; x = [Math]::Round($r.X * $back, 1); y = [Math]::Round($r.Y * $back, 1)
+                       w = [Math]::Round($r.Width * $back, 1); h = [Math]::Round($r.Height * $back, 1) }
+                })
+            }
+        })
+        return @{ text = [string]$result.Text; lines = $lines }
     } finally {
         if ($null -ne $bitmap) { $bitmap.Dispose() }
         if ($null -ne $stream) { $stream.Dispose() }
-        Remove-Item -LiteralPath $filePath -ErrorAction SilentlyContinue
+        $memory.Dispose()
     }
 }

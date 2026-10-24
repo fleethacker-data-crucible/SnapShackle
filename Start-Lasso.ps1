@@ -206,7 +206,7 @@ function Invoke-LassoRequest($Context) {
         $bytes=Read-Body $Context 15000000
         Assert-Png $bytes
         $result=Invoke-LassoOcr $bytes
-        Send-Json $Context @{text=$result;engine='Windows.Media.Ocr'};return
+        Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
     }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
         Send-Json $Context @{items=@(Get-CaptureList $request.QueryString['q'])};return
