@@ -53,13 +53,14 @@ async function capture(endpoint){
   notify('Capturing desktop…');const start=performance.now();
   let response=await api(endpoint);
   if(!response.ok){let data=await response.json().catch(()=>({}));throw Error(data.cancelled?'Region capture cancelled':data.error||'Capture failed')}
-  const blob=await response.blob(),received=performance.now();
+  const blob=await response.blob(),received=performance.now(),method=response.headers.get('X-Lasso-Capture-Method');
   const timing=parseServerTiming(response.headers.get('Server-Timing'));
   await loadImage(blob,'Desktop capture');const ready=performance.now();
   const transfer=Math.round(received-start),decode=Math.round(ready-received);
   const native=Number.isFinite(timing.acquire)?`native ${Math.round(timing.acquire)} ms, PNG ${Math.round(timing.encode||0)} ms, `:'';
   const select=timing.selection>0?` (includes ${Math.round(timing.selection)} ms choosing region)`:'';
-  lastCaptureTiming=`${native}request/transfer ${transfer} ms, browser display ${decode} ms, ${Math.round(ready-start)} ms overall${select}`;
+  const via=method==='PrintWindow'?' · window content (covering windows ignored)':method==='screen'?' · screen pixels (app did not support PrintWindow)':'';
+  lastCaptureTiming=`${native}request/transfer ${transfer} ms, browser display ${decode} ms, ${Math.round(ready-start)} ms overall${select}${via}`;
   console.info('[Lasso] capture timing:',lastCaptureTiming,'image size:',Math.round(blob.size/1024),'KiB');
   const diagnostic=$('#diagnostics');
   if(diagnostic)diagnostic.textContent=diagnostic.textContent.replace(/Last screenshot:[^\n]*/, 'Last screenshot: '+lastCaptureTiming);
@@ -67,10 +68,15 @@ async function capture(endpoint){
 }
 async function refreshScreens(){try{let response=await api('/api/screens');if(!response.ok)throw Error('Screen query failed');let data=await response.json();$('#display').replaceChildren(new Option('All displays',''));(data.screens||[]).forEach((screen,index)=>$('#display').add(new Option('Display '+(index+1)+(screen.primary?' · primary':''),String(index))))}catch(e){fail(e)}}
 async function refreshWindows(){try{let r=await api('/api/windows');if(!r.ok)throw Error('Window enumeration failed');let d=await r.json();$('#windows').replaceChildren(new Option('Choose window',''));for(let w of d.windows||[])$('#windows').add(new Option(w.Title||w.title||'Untitled',String(w.Id??w.id)))}catch(e){fail(e)}}
-$('#capture').onclick=()=>capture('/api/capture'+($('#display').value!==''?'?screen='+encodeURIComponent($('#display').value):'')).catch(fail);
-$('#region').onclick=()=>capture('/api/region').catch(fail);
+// Appends the chosen delay; a countdown in the status bar shows when the capture will fire.
+function withDelay(endpoint){const delay=Number($('#delay')?.value||0);if(!delay)return endpoint;
+  let left=delay;notify(`Capturing in ${left} s — switch to what you want to capture`);
+  const tick=setInterval(()=>{left--;if(left>0)notify(`Capturing in ${left} s…`);else clearInterval(tick)},1000);
+  return endpoint+(endpoint.includes('?')?'&':'?')+'delay='+delay}
+$('#capture').onclick=()=>capture(withDelay('/api/capture'+($('#display').value!==''?'?screen='+encodeURIComponent($('#display').value):''))).catch(fail);
+$('#region').onclick=()=>capture(withDelay('/api/region')).catch(fail);
 $('#refreshWindows').onclick=refreshWindows;
-$('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose an application window first');capture('/api/capture?window='+encodeURIComponent($('#windows').value)).catch(fail)};
+$('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose an application window first');capture(withDelay('/api/capture?window='+encodeURIComponent($('#windows').value))).catch(fail)};
 async function getSharedScreen(){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia({video:{frameRate:settings.recordFps},audio:false})}
 async function videoFor(stream){let video=document.createElement('video');video.srcObject=stream;video.muted=true;await video.play();if(!video.videoWidth)await new Promise(r=>setTimeout(r,400));return video}
 $('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(await new Promise(resolve=>temp.toBlob(resolve,'image/png')),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
@@ -215,7 +221,22 @@ document.addEventListener('keydown',event=>{
   else if(event.ctrlKey&&event.shiftKey&&key==='s'){event.preventDefault();$('#region').click()}
   else if(event.ctrlKey&&event.shiftKey&&key==='p'){event.preventDefault();$('#projectSave').click()}
 });
-async function diagnostics(){let native='unknown',ocr='unavailable';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';ocr=d.ocr?'available':'unavailable'}}catch{}
- $('#diagnostics').textContent='Windows capture: '+native+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
-refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();
+async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';
+   const list=(d.hotkeys||[]).filter(h=>h.keys).map(h=>h.keys+' '+h.action);keys=list.length?list.join(', '):'none registered';const help=$('#globalHotkeys');if(help)help.textContent=keys}}catch{}
+ $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
+// Hotkey captures happen while the browser is in the background; poll for them.
+let lastEvent=null,eventsBusy=false;
+async function openCapture(name,label){const r=await api('/api/library/'+encodeURIComponent(name));if(!r.ok)throw Error('Capture not found');await loadImage(await r.blob(),label||name,{autoSave:false});librarySelection=name}
+async function pollEvents(){
+  if(eventsBusy||document.hidden)return;eventsBusy=true;
+  try{const r=await api('/api/events?since='+(lastEvent??0));if(!r.ok)return;const d=await r.json();
+    if(lastEvent===null){lastEvent=d.latest||0;return}
+    const captures=(d.events||[]).filter(e=>e.type==='capture');lastEvent=Math.max(lastEvent,d.latest||0);
+    if(captures.length){const latest=captures.at(-1);await openCapture(latest.name,'Hotkey capture');await refreshLibrary();notify('Hotkey capture opened · already copied to the clipboard and saved')}
+  }catch(e){console.warn('[Lasso] events',e)}finally{eventsBusy=false}
+}
+setInterval(pollEvents,1500);document.addEventListener('visibilitychange',pollEvents);window.addEventListener('focus',pollEvents);
+async function openFromHash(){const m=location.hash.match(/^#open=((?:Lasso|SnipHero)-[A-Za-z0-9_.-]+\.png)$/);if(!m)return;history.replaceState(null,'',location.pathname);try{await openCapture(m[1],'Hotkey capture')}catch(e){fail(e)}}
+window.addEventListener('hashchange',openFromHash);
+refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();
 })();
