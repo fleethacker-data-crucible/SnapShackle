@@ -24,4 +24,12 @@ assert "const api=(path,options={})=>fetch(path," in js
 assert 'http://localhost:' not in host
 assert 'http://localhost:' not in js
 assert (p/'tests/windows_port_smoke.ps1').is_file()
-print('PASS: process-only launcher, atomic loopback port fallback, dynamic browser URL, no HTTP.sys URL reservations')
+# Lifecycle options reach the host from both launchers: --stay / --replace (or -Stay / -Replace).
+dev=(p/'dev/Launch-LocalDev.bat').read_text(encoding='utf-8')
+assert '%*' in dev and '-Replace' in dev, 'dev launcher must stop a running Lasso first'
+assert '--stay' in launcher and '--replace' in launcher
+assert '[switch]$Stay' in host and '[switch]$Replace' in host and 'ValueFromRemainingArguments' in host
+assert 'PositionalBinding=$false' in host, '--stay must not bind to -Port'
+assert "Read-Host 'Stop it and start fresh? [Y/n]'" in host
+assert 'Get-LassoProcesses' in host and 'Stop-LassoProcesses' in host
+print('PASS: process-only launcher, atomic loopback port fallback, dynamic browser URL, no HTTP.sys URL reservations, --stay/--replace passthrough')

@@ -3,6 +3,10 @@
   so a capture starts from the keyboard and never includes the studio window.
   After a hotkey capture the image is copied to the clipboard, saved to the library, and announced
   to the studio through /api/events.
+  Shutdown: when the host sets $Shared.Quit (tab closed, End session, Exit, Stop-Lasso.ps1, Ctrl+C)
+  a timer leaves the message loop; the finally block unregisters every hotkey on this thread (the
+  thread that registered them) and disposes the NotifyIcon, which removes it from the tray, so no
+  ghost icon is left behind.
 #>
 if (-not ('Lasso.HotkeyWindow' -as [type])) {
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
@@ -28,7 +32,11 @@ namespace Lasso {
    if(m.Msg==WM_HOTKEY){var handler=Pressed;if(handler!=null)handler(m.WParam.ToInt32());return;}
    base.WndProc(ref m);
   }
-  public void Dispose(){foreach(int id in ids)UnregisterHotKey(Handle,id);ids.Clear();DestroyHandle();}
+  public void Dispose(){
+   if(Handle==IntPtr.Zero)return;
+   foreach(int id in ids)UnregisterHotKey(Handle,id);
+   ids.Clear();DestroyHandle();
+  }
  }
  public static class TrayArt {
   [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
@@ -141,9 +149,10 @@ $script:LassoTrayScript = {
         [void]$menu.Items.Add($screenLabel, $null, { & $capture 'screen' })
         [void]$menu.Items.Add('Open studio', $null, { & $openStudio })
         [void]$menu.Items.Add('-')
-        [void]$menu.Items.Add('Quit Lasso', $null, {
+        # Exit stops everything: server, hotkeys and this icon. The host's loop sees Quit within half a second.
+        [void]$menu.Items.Add('Exit', $null, {
+            $Shared.StopReason = 'Exit in the tray menu.'
             $Shared.Quit = $true
-            try { $Shared.Server.Dispose() } catch {}
         })
         $tray.ContextMenuStrip = $menu
         $tray.add_BalloonTipClicked({ & $openStudio })
@@ -155,13 +164,23 @@ $script:LassoTrayScript = {
         $timer.Interval = 400
         $timer.add_Tick({ if ($Shared.Quit) { $timer.Stop(); [Windows.Forms.Application]::ExitThread() } })
         $timer.Start()
+        $Shared.TrayIcon = $tray
         $Shared.TrayReady = $true
+        if ($Shared.Stay) {
+            $tray.Text = 'Lasso (stays in the tray; right-click to exit)'
+            $tray.ShowBalloonTip(3000, 'Lasso is in the tray', 'Hotkeys stay on after the studio closes. Right-click this icon and choose Exit to stop Lasso.', [Windows.Forms.ToolTipIcon]::None)
+        }
         [Windows.Forms.Application]::Run()
     } catch {
         $Shared.TrayError = $_.Exception.Message
     } finally {
-        if ($hotkeys) { $hotkeys.Dispose() }
-        if ($tray) { $tray.Visible = $false; $tray.Dispose() }
+        if ($timer) { try { $timer.Stop(); $timer.Dispose() } catch {} }
+        if ($hotkeys) { try { $hotkeys.Dispose() } catch {} }
+        if ($tray) { try { $tray.Visible = $false; $tray.Dispose() } catch {} }
+        if ($menu) { try { $menu.Dispose() } catch {} }
+        $Shared.TrayIcon = $null
+        $Shared.TrayReady = $false
+        $Shared.TrayStopped = $true
     }
 }
 
@@ -177,9 +196,22 @@ function Start-LassoTray([string]$Root, [string]$Library, $Shared) {
     $async = $ps.BeginInvoke()
     return @{ PowerShell = $ps; Runspace = $runspace; Async = $async }
 }
+# Returns $true when the tray thread finished cleanly, $false when it had to be abandoned.
 function Stop-LassoTray($Handle, $Shared) {
-    if ($null -eq $Handle) { return }
+    if ($null -eq $Handle) { return $true }
     $Shared.Quit = $true
-    try { [void]$Handle.Async.AsyncWaitHandle.WaitOne(3000) } catch {}
+    # The tray thread leaves its message loop on the next timer tick (400 ms), then cleans up itself.
+    $done = $false
+    try { $done = $Handle.Async.AsyncWaitHandle.WaitOne(5000) } catch {}
+    if (-not $done -or -not $Shared.TrayStopped) {
+        # Last resort if the thread is stuck (for example inside a capture): remove the icon from here,
+        # so Windows does not keep a ghost icon. Hotkeys are released when the process exits.
+        $icon = $Shared.TrayIcon
+        if ($null -ne $icon) { try { $icon.Visible = $false; $icon.Dispose() } catch {} }
+        # Do not wait on (or dispose) a stuck pipeline: that can block. The caller ends the process.
+        try { [void]$Handle.PowerShell.BeginStop($null, $null) } catch {}
+        return $false
+    }
     try { $Handle.PowerShell.Dispose(); $Handle.Runspace.Dispose() } catch {}
+    return $true
 }
