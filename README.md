@@ -1,80 +1,94 @@
-# CutterMk
+<p align="center"><img src="assets/brand/emblem-light.png" width="280" alt="SnapShackle"></p>
+
+# SnapShackle
 
 A **local-first Windows screenshot and annotation studio** using native Windows capture, a built-in PowerShell HTTP host, and an offline browser UI. Designed to run without Node, Python, npm, CDN, a package installer, or administrator rights on an authorized Windows workstation.
 
-**CutterMk** is a cutter (the ship) that cuts and marks your screen; *Mk* is the Navy's Mark designation. It was previously called **Lasso**, and before that **SnipHero**. See [the roadmap](https://claude.ai/artifact/K9as42yNHQ2fxTx2j5A7Ag) for where it is going.
+See [the roadmap](https://claude.ai/artifact/K9as42yNHQ2fxTx2j5A7Ag) for where it is going.
+
+## The name
+
+A **snap shackle** is a quick-release sailing shackle: it clips on in a moment and lets go just as fast. SnapShackle does the same with your screen: snap it, then shackle your marks to it. Formerly **CutterMk**, **Lasso** and **SnipHero**.
 
 **Status:** An expanding prototype with a tested browser editor; **not a production-hardened or feature-complete Snagit/ShareX replacement**. A genuine Windows desktop run and security review are required before use with sensitive work data.
 
-![CutterMk Studio, dark theme](docs/studio-preview.png)
+![SnapShackle Studio, dark theme](docs/studio-preview.png)
 
 ## Run on Windows (Nautilus-friendly launch pattern)
 
 1. Extract **the entire archive**, retaining `assets/`, `modules/`, and `tests/`.
-2. Double-click **`CutterMk.bat`** to launch the GUI. This is the **only batch launcher**; `Start-CutterMk.ps1` is the direct PowerShell/terminal entry point.
-3. CutterMk first tries **127.0.0.1:8765**. If Keystone, Cascade, ARC, or another application already uses it, CutterMk **binds an available loopback port** and opens its browser at the **actual chosen address**. Other servers are never stopped, modified, or taken over. Use the URL printed in the console if the browser does not launch automatically.
-4. **Closing the studio tab stops CutterMk**: the local server, the tray icon and the global hotkeys, about 5 seconds after the last studio tab closes (20 seconds if the browser just disappears). A reload does not stop it, and with two studio tabs open, closing one keeps it running. **End session** (top right of the studio), **Exit** in the tray menu, `Stop-CutterMk.ps1` or Ctrl+C in the console also stop it.
+2. Double-click **`Launch-SnapShackle.bat`** to launch the GUI. This is the **only batch launcher**; `Start-SnapShackle.ps1` is the direct PowerShell/terminal entry point.
+3. SnapShackle first tries **127.0.0.1:8765**. If Gangplank, Halyard, Lazarette, or another application already uses it, SnapShackle **binds an available loopback port** and opens its browser at the **actual chosen address**. Other servers are never stopped, modified, or taken over. Use the URL printed in the console if the browser does not launch automatically.
+4. **Closing the studio tab stops SnapShackle**: the local server, the tray icon and the global hotkeys, about 5 seconds after the last studio tab closes (20 seconds if the browser just disappears). A reload does not stop it, and with two studio tabs open, closing one keeps it running. **End session** (top right of the studio), **Exit** in the tray menu, `Stop-SnapShackle.ps1` or Ctrl+C in the console also stop it.
 
 ### Session lifecycle
 
 | You want | Do this |
 | --- | --- |
-| CutterMk only while the studio is open (default) | `CutterMk.bat`. Closing the tab stops everything, so nothing hides in the background holding the port or the hotkeys. |
-| Hotkeys and the tray icon after the studio closes | `CutterMk.bat --stay` (or `-Stay`), or tick **Workflows → Settings → Keep hotkeys in the tray after this tab closes**. The tray icon stays visible; right-click it and choose **Exit** to stop CutterMk. Click it to reopen the studio. |
-| Never auto-stop (scripts, testing) | Set `CUTTERMK_AUTO_STOP=0` before starting. |
-| Stop every running CutterMk from a shell | `powershell -NoProfile -ExecutionPolicy Bypass -File Stop-CutterMk.ps1` |
+| SnapShackle only while the studio is open (default) | `Launch-SnapShackle.bat`. Closing the tab stops everything, so nothing hides in the background holding the port or the hotkeys. |
+| Hotkeys and the tray icon after the studio closes | `Launch-SnapShackle.bat --stay` (or `-Stay`), or tick **Workflows → Settings → Keep hotkeys in the tray after this tab closes**. The tray icon stays visible; right-click it and choose **Exit** to stop SnapShackle. Click it to reopen the studio. |
+| Never auto-stop (scripts, testing) | Set `SNAPSHACKLE_AUTO_STOP=0` before starting (the older `CUTTERMK_AUTO_STOP=0` still works). |
+| Stop every running SnapShackle from a shell | `powershell -NoProfile -ExecutionPolicy Bypass -File Stop-SnapShackle.ps1` |
 
-- **Hidden tabs.** A studio tab in the background keeps CutterMk running (it reports itself hidden and gets 75 seconds between heartbeats, because browsers slow timers in background tabs). A tab the browser puts to sleep or discards (Edge "sleeping tabs") counts as closed; use `--stay` or the tray preference if you rely on hotkeys with the studio long in the background.
-- **One instance.** If CutterMk is already running, the launcher says where and asks *Stop it and start fresh?*. `--replace` (or `-Replace`) answers yes without asking.
+- **Hidden tabs.** A studio tab in the background keeps SnapShackle running (it reports itself hidden and gets 75 seconds between heartbeats, because browsers slow timers in background tabs). A tab the browser puts to sleep or discards (Edge "sleeping tabs") counts as closed; use `--stay` or the tray preference if you rely on hotkeys with the studio long in the background.
+- **One instance.** If SnapShackle is already running, the launcher says where and asks *Stop it and start fresh?*. `--replace` (or `-Replace`) answers yes without asking.
 - **Never mid-save.** Auto-stop waits while a hotkey capture is still being saved, copied and indexed, then stops on the next check.
-- **Runtime files.** Each running CutterMk writes `%LOCALAPPDATA%\CutterMk\logs\cuttermk-server-<pid>.json` (pid, port, URL, start time; never the session token) next to its captures and settings, and deletes it when it stops. `Stop-CutterMk.ps1` and the launcher read these, remove stale ones, and also find a CutterMk started without one. A running CutterMk is asked to stop first, so it removes its tray icon and releases its hotkeys itself; only one that does not answer is force-stopped.
+- **Runtime files.** Each running SnapShackle writes `%LOCALAPPDATA%\SnapShackle\logs\snapshackle-server-<pid>.json` (pid, port, URL, start time; never the session token) next to its captures and settings, and deletes it when it stops. `Stop-SnapShackle.ps1` and the launcher read these (and the `%LOCALAPPDATA%\CutterMk\logs\cuttermk-server-<pid>.json` files of a CutterMk build), remove stale ones, and also find a SnapShackle or CutterMk started without one. A running SnapShackle is asked to stop first, so it removes its tray icon and releases its hotkeys itself; only one that does not answer is force-stopped.
 
 ### Why the batch launcher exists
 
-`CutterMk.bat` uses **Windows PowerShell 5.1** with `-STA -NoProfile -NoLogo -ExecutionPolicy Bypass`. The flag is explicitly visible in the launcher and **only applies to the new PowerShell process**. It does **not** elevate privileges, change machine/user execution-policy configuration, override domain Group Policy, or defeat AppLocker, WDAC, endpoint protection, or enterprise restrictions. Only launch scripts in an environment in which you are authorized to do so. If organizational controls block it, contact IT for an approved route rather than defeating those controls.
+`Launch-SnapShackle.bat` uses **Windows PowerShell 5.1** with `-STA -NoProfile -NoLogo -ExecutionPolicy Bypass`. The flag is explicitly visible in the launcher and **only applies to the new PowerShell process**. It does **not** elevate privileges, change machine/user execution-policy configuration, override domain Group Policy, or defeat AppLocker, WDAC, endpoint protection, or enterprise restrictions. Only launch scripts in an environment in which you are authorized to do so. If organizational controls block it, contact IT for an approved route rather than defeating those controls.
 
-CutterMk's HTTP server now uses a **raw `TcpListener` bound exclusively to 127.0.0.1** instead of `HttpListener`. It therefore does not depend on Windows HTTP.sys URL reservations / URLACL admin setup. The default port is a preference, not a hard requirement. The app tries 100 successive ports and finally allows Windows to allocate an ephemeral loopback port if those are unavailable. Port binding is atomic; there is no separate "check if available" race. The UI uses relative API URLs, so screenshots, OCR, and the library automatically target the chosen port.
+SnapShackle's HTTP server now uses a **raw `TcpListener` bound exclusively to 127.0.0.1** instead of `HttpListener`. It therefore does not depend on Windows HTTP.sys URL reservations / URLACL admin setup. The default port is a preference, not a hard requirement. The app tries 100 successive ports and finally allows Windows to allocate an ephemeral loopback port if those are unavailable. Port binding is atomic; there is no separate "check if available" race. The UI uses relative API URLs, so screenshots, OCR, and the library automatically target the chosen port.
 
 ### Options and diagnostics
 
 ```bat
-CutterMk.bat -NoBrowser
-CutterMk.bat -Port 9000
-CutterMk.bat -Diagnostics
-CutterMk.bat --stay
-CutterMk.bat --replace
+Launch-SnapShackle.bat -NoBrowser
+Launch-SnapShackle.bat -Port 9000
+Launch-SnapShackle.bat -Diagnostics
+Launch-SnapShackle.bat --stay
+Launch-SnapShackle.bat --replace
 ```
 
-`-NoBrowser` keeps the host running and prints its URL (it then stops once a studio tab that connected has closed; add `--stay` to keep it). `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts CutterMk separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
+`-NoBrowser` keeps the host running and prints its URL (it then stops once a studio tab that connected has closed; add `--stay` to keep it). `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts SnapShackle separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
 
-Captures live under `%LOCALAPPDATA%\CutterMk\Captures`. On first start, CutterMk **moves** any captures and settings from `%LOCALAPPDATA%\Lasso` and `%LOCALAPPDATA%\SnipHero` into it (files are never copied, deleted or overwritten; a name that already exists stays in the old folder). Old `Lasso-*.png` and `SnipHero-*.png` names keep working, and the old default file-name prefix becomes `CutterMk`. Preferences are stored in `%LOCALAPPDATA%\CutterMk\settings.json`. Screenshot bytes and OCR data are not transmitted off the computer by CutterMk. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
+Captures live under `%LOCALAPPDATA%\SnapShackle\Captures`. On first start, when that folder does not exist yet, SnapShackle **copies** the captures and settings from `%LOCALAPPDATA%\CutterMk` into it and leaves the CutterMk folder exactly as it was. Anything still in `%LOCALAPPDATA%\Lasso` or `%LOCALAPPDATA%\SnipHero` is then **moved** in, as CutterMk did (never deleted or overwritten; a name that already exists stays in the old folder). Old `CutterMk-*.png`, `Lasso-*.png` and `SnipHero-*.png` names keep working, and an old default file-name prefix becomes `SnapShackle`. Preferences are stored in `%LOCALAPPDATA%\SnapShackle\settings.json`. Screenshot bytes and OCR data are not transmitted off the computer by SnapShackle. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
+
+## Renamed to SnapShackle
+
+- Launch with **`Launch-SnapShackle.bat`** (was `CutterMk.bat`); `Start-SnapShackle.ps1` and `Stop-SnapShackle.ps1` replace `Start-CutterMk.ps1` and `Stop-CutterMk.ps1`. Update any shortcut that points at `CutterMk.bat`.
+- Data lives in `%LOCALAPPDATA%\SnapShackle`. On first start the CutterMk folder is copied there once and left untouched, so going back to a CutterMk build still finds its own captures (captures made in SnapShackle afterwards stay in SnapShackle).
+- Studio preferences kept in browser storage move to `snapshackle-settings` and `snapshackle-theme`; the `cuttermk-*` keys are copied forward and left in place.
+- A CutterMk (or Lasso) instance that is still running is treated as already running, so the single-instance rule holds across the upgrade (`Stop-SnapShackle.ps1` stops it too).
+- Environment variables are now `SNAPSHACKLE_AUTO_STOP` and `SNAPSHACKLE_CHROMIUM`; `CUTTERMK_AUTO_STOP` and `CUTTERMK_CHROMIUM` are still read when the new ones are not set.
 
 ## Renamed to CutterMk (v0.12)
 
 - Launch with **`CutterMk.bat`** (was `Lasso.bat`); `Start-CutterMk.ps1` and `Stop-CutterMk.ps1` replace the Lasso scripts.
 - Data lives in `%LOCALAPPDATA%\CutterMk`. Captures and settings from Lasso and SnipHero are moved there on first start; nothing is copied, deleted or overwritten.
-- A Lasso instance that is still running is treated as already running, so the single-instance rule holds across the upgrade (`Stop-CutterMk.ps1` stops it too).
+- A Lasso instance that is still running is treated as already running, so the single-instance rule holds across the upgrade.
 - Environment variables are now `CUTTERMK_AUTO_STOP` and `CUTTERMK_CHROMIUM`.
 
-## One look with ARC (v0.11)
+## One look with ARC, now Lazarette (v0.11)
 
-- The studio now uses **ARC's design system**: the same colour tokens, Inter and Cascadia type, radius and shadow scale, button styles, sidebar and top-bar layout, and **Lucide icons** (1.54.0, the version ARC uses, bundled offline in `assets/icons.js`).
-- **Light and dark themes** like ARC: dark by default, a sun/moon button in the top bar, and **Workflows → Settings → Theme** offers Dark, Light or Match Windows. The choice is saved by the host.
+- The studio now uses **Lazarette's design system**: the same colour tokens, Inter and Cascadia type, radius and shadow scale, button styles, sidebar and top-bar layout, and **Lucide icons** (1.54.0, the version Lazarette uses, bundled offline in `assets/icons.js`).
+- **Light and dark themes** like Lazarette: dark by default, a sun/moon button in the top bar, and **Workflows → Settings → Theme** offers Dark, Light or Match Windows. The choice is saved by the host.
 - **Single-key tool shortcuts** shown beside each tool: `V` select, `A` arrow, `R` rectangle, `E` ellipse, `L` line, `P` pen, `H` highlight, `T` text, `N` steps, `C` crop, `X` redact, `Q` pixelate, `B` blur. They are ignored while you type in a field.
 - The native selection overlay and the tray icon use the same violet and sky accents.
 
-![CutterMk Studio, light theme](docs/studio-preview-light.png)
+![SnapShackle Studio, light theme](docs/studio-preview-light.png)
 
 ## Smart redaction and searchable library (v0.10)
 
 - **Find sensitive info** (Workflows tab) reads the image with OCR and lists emails, SSNs, card numbers (Luhn-checked), DoD IDs (10 digits), US phone numbers and IPv4 addresses. Untick anything you want to keep, then **Redact checked** covers the rest with solid boxes in one undo step. **Redact every instance of** covers a word or phrase wherever OCR finds it. OCR can miss small or stylised text, so check the image before you share it.
 - **Search by the text in your screenshots.** Captures saved to the library (and hotkey captures) are OCR-indexed in their `.meta.json` sidecar, and library search matches that text as well as names, tags and notes. Results found through the image text say so. Editing tags or notes keeps the index.
 - **Drag-to-crop** (the Crop tool) trims the image and moves every annotation with it, so arrows, text and redactions stay editable. Undo restores the full image. The old Crop button (exact pixel values) works the same way; neither flattens annotations any more.
-- **Preferences are stored by the host** in `%LOCALAPPDATA%\CutterMk\settings.json`. The browser keys its storage by origin, and the origin includes the port, so a port fallback used to start with empty preferences.
+- **Preferences are stored by the host** in `%LOCALAPPDATA%\SnapShackle\settings.json`. The browser keys its storage by origin, and the origin includes the port, so a port fallback used to start with empty preferences.
 
 ## Capturing without the studio in the way (v0.9)
 
-- **Global hotkeys** work from any app, so the studio never appears in your captures. CutterMk tries each preferred chord and falls back if another app (or Windows' "Print Screen opens Snipping Tool" setting) already owns it:
+- **Global hotkeys** work from any app, so the studio never appears in your captures. SnapShackle tries each preferred chord and falls back if another app (or Windows' "Print Screen opens Snipping Tool" setting) already owns it:
 
   | Capture | Preferred | Fallback |
   | --- | --- | --- |
@@ -119,7 +133,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 
 ### Redaction safety
 
-Pixelation and blur are **visual effects, not secure sanitization**. Opaque redaction hides annotated regions in flattened exported images, but editable `.cuttermk.json` projects retain the unredacted original. Imported original files and other copies are unaffected. Inspect flattened exports and follow your organization's data handling policy.
+Pixelation and blur are **visual effects, not secure sanitization**. Opaque redaction hides annotated regions in flattened exported images, but editable `.snapshackle.json` projects retain the unredacted original. Imported original files and other copies are unaffected. Inspect flattened exports and follow your organization's data handling policy.
 
 ### Known gaps
 
@@ -132,8 +146,8 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 
 - `pwsh dev/csharp_check.ps1 -ReferenceDir <v4.8 reference assemblies>` compiles every inline C# block as C# 5 against .NET Framework 4.8 (what Windows PowerShell 5.1 uses), so native code can be checked without Windows. Reference assemblies: the `v4.8` folder of [mono/reference-assemblies](https://github.com/mono/reference-assemblies).
 - `python tests/effects_test.py` checks that blur stays aligned with what it covers.
-- `powershell -NoProfile -File tests/host_tests.ps1` tests the HTTP transport (Host checks, port fallback, rejected requests), the Lasso and SnipHero migrations and the lifecycle rules on a simulated clock (heartbeat timeout, leaving grace, reload, several tabs, busy capture, sleep/wake, runtime files, stopping an instance without its PID). It also parses every `.ps1` file. Runs on Windows PowerShell 5.1 and PowerShell 7.
-- CI runs these on the self-hosted Windows runner (`.github/workflows/tests.yml`). Pushing a `v*` tag that matches `VERSION` builds `CutterMk-<version>.zip` with runtime files only (`release.yml`).
+- `powershell -NoProfile -File tests/host_tests.ps1` tests the HTTP transport (Host checks, port fallback, rejected requests), the CutterMk, Lasso and SnipHero migrations and the lifecycle rules on a simulated clock (heartbeat timeout, leaving grace, reload, several tabs, busy capture, sleep/wake, runtime files, stopping an instance without its PID). It also parses every `.ps1` file. Runs on Windows PowerShell 5.1 and PowerShell 7.
+- CI runs these on the self-hosted Windows runner (`.github/workflows/tests.yml`). Pushing a `v*` tag that matches `VERSION` builds `SnapShackle-<version>.zip` with runtime files only (`release.yml`).
 
 Only development/testing requires Python, Pillow, Chromium/Playwright or Node. **Runtime has no dependency on these tools.**
 
@@ -145,20 +159,21 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
+- `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
 Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR integrations, or enterprise Nautilus compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
 
 ## Project structure
 
 ```text
-CutterMk.bat                  Windows GUI launcher (process-scoped PowerShell flags)
-Start-CutterMk.ps1            Local HTTP host, capture API and library
-Stop-CutterMk.ps1             Stops every running CutterMk (server, tray icon, hotkeys) without PIDs
+Launch-SnapShackle.bat     Windows GUI launcher (process-scoped PowerShell flags)
+Start-SnapShackle.ps1      Local HTTP host, capture API and library
+Stop-SnapShackle.ps1       Stops every running SnapShackle (server, tray icon, hotkeys) without PIDs
 VERSION                    Single source of the version number
 modules/LocalHttp.ps1      Loopback TCP / bounded HTTP adapter and dynamic port binding
 modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
-modules/Migration.ps1      One-time move of Lasso and SnipHero captures and settings into CutterMk
+modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
 modules/Tray.ps1           Global hotkeys and tray icon on their own STA thread
 modules/Lifecycle.ps1      Tab-owns-the-server presence rule, runtime files, finding/stopping instances
@@ -168,9 +183,10 @@ assets/editor.js           Editable non-destructive object engine
 assets/studio.js           App/controller, recording, library, workflows
 assets/gif.js              Offline GIF89a encoder
 assets/stitch.js           Overlap-aware long screenshot stitching
+assets/brand/              README emblems (not loaded by the app, not in release zips)
 tests/                     Development-time host, browser and static tests
 dev/                       Personal-PC development launcher (not in release zips)
-TechStack.md               Stack rules and CutterMk's choices and exceptions
+TechStack.md               Stack rules and SnapShackle's choices and exceptions
 ```
 
 The runtime contains **original source code**; ShareX, Flameshot, Excalidraw, and Fabric.js were only feature/design references and are not bundled dependencies.

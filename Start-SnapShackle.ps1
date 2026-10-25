@@ -1,9 +1,10 @@
 <#
- CutterMk local server. Windows PowerShell 5.1 recommended for native OCR.
+ SnapShackle local server. Windows PowerShell 5.1 recommended for native OCR.
  No elevated privileges, remote listening, installers, or online dependencies.
- The studio tab owns the server: closing it stops CutterMk, its tray icon and hotkeys.
- -Stay (or --stay) keeps CutterMk in the tray with its hotkeys after the tab closes; Exit is in the tray menu.
- -Replace (or --replace) stops a running CutterMk without asking. CUTTERMK_AUTO_STOP=0 turns auto-stop off.
+ The studio tab owns the server: closing it stops SnapShackle, its tray icon and hotkeys.
+ -Stay (or --stay) keeps SnapShackle in the tray with its hotkeys after the tab closes; Exit is in the tray menu.
+ -Replace (or --replace) stops a running SnapShackle without asking. SNAPSHACKLE_AUTO_STOP=0 turns auto-stop off
+ (CUTTERMK_AUTO_STOP, the name before the rename, is still read when SNAPSHACKLE_AUTO_STOP is unset).
 #>
 [CmdletBinding(PositionalBinding=$false)]
 param(
@@ -15,20 +16,20 @@ param(
     [switch]$NoTray,
     # Stay in the tray with hotkeys after the studio tab closes (Exit in the tray menu stops it).
     [switch]$Stay,
-    # If CutterMk is already running, stop it and start fresh without asking.
+    # If SnapShackle is already running, stop it and start fresh without asking.
     [switch]$Replace,
-    # Tests only: skip the single-instance check (a headless -NoTray test host next to a running CutterMk).
+    # Tests only: skip the single-instance check (a headless -NoTray test host next to a running SnapShackle).
     [switch]$AllowSecondInstance,
     # Launcher-style options: --stay, --replace, --no-browser, --no-tray.
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest
 )
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
-    throw 'CutterMk requires a Windows desktop session.'
+    throw 'SnapShackle requires a Windows desktop session.'
 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Lifecycle.ps1')
-$launch = Read-CutterMkLaunchOptions $Rest
+$launch = Read-SnapShackleLaunchOptions $Rest
 if ($launch.Stay) { $Stay = $true }
 if ($launch.Replace) { $Replace = $true }
 if ($launch.NoBrowser) { $NoBrowser = $true }
@@ -40,38 +41,41 @@ foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option 
 . (Join-Path $root 'modules/Migration.ps1')
 . (Join-Path $root 'modules/Library.ps1')
 . (Join-Path $root 'modules/Tray.ps1')
-$CutterMkVersion = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
-$library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'CutterMk\Captures' } else { Join-Path $root 'captures' }
-# Data from earlier names (Lasso, SnipHero) keeps working: captures and settings are moved
-# (never copied or deleted) on first start.
-Invoke-CutterMkMigration -BaseDir $env:LOCALAPPDATA -AppDir (Split-Path -Parent $library)
+$SnapShackleVersion = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
+$library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle\Captures' } else { Join-Path $root 'captures' }
+# Data from earlier names keeps working: on first start CutterMk's captures and settings are copied
+# forward (the CutterMk folder is left as it is), and Lasso and SnipHero data still left over is moved.
+Invoke-SnapShackleMigration -BaseDir $env:LOCALAPPDATA -AppDir (Split-Path -Parent $library)
 [void][IO.Directory]::CreateDirectory($library)
 $settingsPath = Join-Path (Split-Path -Parent $library) 'settings.json'
-# Accept earlier prefixes so Lasso- and SnipHero-era captures stay visible in the library.
-$CaptureNamePattern = '(?:CutterMk|Lasso|SnipHero)-[a-zA-Z0-9_.-]+\.png'
+# Accept earlier prefixes so CutterMk-, Lasso- and SnipHero-era captures stay visible in the library.
+$CaptureNamePattern = '(?:SnapShackle|CutterMk|Lasso|SnipHero)-[a-zA-Z0-9_.-]+\.png'
 if ($Diagnostics) {
-    Write-Host ('CutterMk ' + $CutterMkVersion + ' launcher and host diagnostics') -ForegroundColor Cyan
+    Write-Host ('SnapShackle ' + $SnapShackleVersion + ' launcher and host diagnostics') -ForegroundColor Cyan
     Write-Host ('PowerShell: ' + $PSVersionTable.PSVersion.ToString())
     Write-Host ('Process policy: ' + (Get-ExecutionPolicy -Scope Process))
     Write-Host ('Effective policy: ' + (Get-ExecutionPolicy))
     Write-Host 'Machine policy and application-control rules remain in force.'
-    $testServer = [CutterMk.Transport.Server]::new($Port,$PortScanCount)
+    $testServer = [SnapShackle.Transport.Server]::new($Port,$PortScanCount)
     try { Write-Host ('Loopback socket bind: PASS (http://127.0.0.1:' + $testServer.Port + '/)') }
     finally { $testServer.Dispose() }
     Write-Host 'Diagnostics passed. No long-running server was started.' -ForegroundColor Green
     return
 }
-# One instance: a second CutterMk would fight the first for the hotkeys and the tray.
-$runtimeDir = Get-CutterMkRuntimeDir $root
-$running = @(if (-not $AllowSecondInstance) { Get-CutterMkProcesses $runtimeDir })
+# One instance: a second SnapShackle would fight the first for the hotkeys and the tray.
+# A CutterMk build from before the rename writes its runtime files under %LOCALAPPDATA%\CutterMk\logs:
+# look there too, so an old instance still running counts (and can be stopped) as well.
+$runtimeDir = Get-SnapShackleRuntimeDir $root
+$searchDirs = @($runtimeDir, (Get-SnapShackleLegacyRuntimeDir))
+$running = @(if (-not $AllowSecondInstance) { Get-SnapShackleProcesses $searchDirs })
 if ($running.Count -gt 0) {
     $where = ($running | ForEach-Object { if ($_.Url) { $_.Url + ' (PID ' + $_.Pid + ')' } else { 'PID ' + $_.Pid } }) -join ', '
-    Write-Host ('CutterMk is already running: ' + $where) -ForegroundColor Yellow
+    Write-Host ('SnapShackle is already running: ' + $where) -ForegroundColor Yellow
     $answer = if ($Replace) { 'y' } else { Read-Host 'Stop it and start fresh? [Y/n]' }
     if ($answer -eq '' -or $answer -match '^[Yy]') {
-        foreach ($stoppedPid in Stop-CutterMkProcesses $runtimeDir) { Write-Host ('  stopped PID ' + $stoppedPid) -ForegroundColor DarkGray }
+        foreach ($stoppedPid in Stop-SnapShackleProcesses $searchDirs) { Write-Host ('  stopped PID ' + $stoppedPid) -ForegroundColor DarkGray }
     } else {
-        Write-Host 'Leaving the running CutterMk alone. Use End session in its studio, Exit in its tray menu, or Stop-CutterMk.ps1.' -ForegroundColor DarkGray
+        Write-Host 'Leaving the running SnapShackle alone. Use End session in its studio, Exit in its tray menu, or Stop-SnapShackle.ps1.' -ForegroundColor DarkGray
         $open = @($running | Where-Object { $_.Url } | Select-Object -First 1)
         if ($open.Count -gt 0 -and -not $NoBrowser) { try { Start-Process $open[0].Url } catch {} }
         exit 0
@@ -80,7 +84,7 @@ if ($running.Count -gt 0) {
 $sessionToken = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
 # Bind directly to 127.0.0.1; no HttpListener URL ACL or admin permissions.
 # The socket is held from selection through shutdown: no free-port check/bind race.
-$server = [CutterMk.Transport.Server]::new($Port,$PortScanCount)
+$server = [SnapShackle.Transport.Server]::new($Port,$PortScanCount)
 $requestedPort = $Port
 $Port = $server.Port
 if ($requestedPort -ne $Port) {
@@ -101,7 +105,7 @@ function Send-Response($Context, [byte[]]$Bytes, [string]$ContentType='applicati
     finally { $response.Close() }
 }
 function Add-CaptureTimingHeaders($Context) {
-    $stats=$script:CutterMkCaptureStats
+    $stats=$script:SnapShackleCaptureStats
     if ($null -eq $stats) { return }
     $capture=[math]::Round([double]$stats.acquireMs,1).ToString([Globalization.CultureInfo]::InvariantCulture)
     $encode=[math]::Round([double]$stats.encodeMs,1).ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -132,8 +136,8 @@ function Assert-Png([byte[]]$Bytes) {
     $height = ([long]$Bytes[20] -shl 24) + ([long]$Bytes[21] -shl 16) + ([long]$Bytes[22] -shl 8) + $Bytes[23]
     if ($width -le 0 -or $height -le 0 -or $width*$height -gt 100000000) { throw 'PNG image dimensions exceed limit' }
 }
-function Get-CutterMkDelay($Query) { if ($Query['delay'] -match '^\d{1,2}$') { [Math]::Min(10,[int]$Query['delay']) } else { 0 } }
-function Get-MetaPath([string]$Name) { Get-CutterMkMetaPath $library $Name }
+function Get-SnapShackleDelay($Query) { if ($Query['delay'] -match '^\d{1,2}$') { [Math]::Min(10,[int]$Query['delay']) } else { 0 } }
+function Get-MetaPath([string]$Name) { Get-SnapShackleMetaPath $library $Name }
 function Get-SafeCapturePath([string]$Name) {
     if ($Name -notmatch ('^' + $CaptureNamePattern + '$')) { throw 'Invalid capture name' }
     Join-Path $library $Name
@@ -141,7 +145,7 @@ function Get-SafeCapturePath([string]$Name) {
 # Keep a small, bounded in-memory thumbnail cache: no persistent duplicate screenshots.
 $script:thumbnailCache = [Collections.Generic.Dictionary[string,byte[]]]::new([StringComparer]::Ordinal)
 $script:thumbnailOrder = [Collections.Generic.Queue[string]]::new()
-function Get-CutterMkThumbnail([string]$Name) {
+function Get-SnapShackleThumbnail([string]$Name) {
     $path=Get-SafeCapturePath $Name
     if (-not (Test-Path -LiteralPath $path)) { return $null }
     if ($script:thumbnailCache.ContainsKey($Name)) { return ,$script:thumbnailCache[$Name] }
@@ -175,7 +179,7 @@ function Get-CutterMkThumbnail([string]$Name) {
     }
     return ,$bytes
 }
-function Invoke-CutterMkRequest($Context) {
+function Invoke-SnapShackleRequest($Context) {
     $request=$Context.Request; $path=$request.Url.AbsolutePath; $method=$request.HttpMethod
     if (-not [Net.IPAddress]::IsLoopback($request.RemoteEndPoint.Address)) { Send-Json $Context @{error='Local clients only'} 403;return }
     if ($request.Url.Host -ne '127.0.0.1' -or $request.Url.Port -ne $Port) { Send-Json $Context @{error='Invalid host'} 403;return }
@@ -184,7 +188,7 @@ function Invoke-CutterMkRequest($Context) {
     $origin=$request.Headers['Origin']
     if ($origin -and $origin -ne "http://127.0.0.1:$Port") { Send-Json $Context @{error='Origin is not authorized'} 403;return }
     if ($path -eq '/' -and $method -eq 'GET') {
-        $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__CUTTERMK_VERSION__',$CutterMkVersion)
+        $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SNAPSHACKLE_VERSION__',$SnapShackleVersion)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
     }
     if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme)\.js$') {
@@ -198,37 +202,37 @@ function Invoke-CutterMkRequest($Context) {
     if ($path -eq '/api/heartbeat' -and $method -eq 'POST') {
         # navigator.sendBeacon cannot set headers, so on this route alone the token may travel in the
         # JSON body as "session". Never in the query string; the body is never logged.
-        $beat=ConvertFrom-CutterMkHeartbeat ([Text.Encoding]::UTF8.GetString((Read-Body $Context 1024)))
-        $headerOk=Test-CutterMkSecretEquals ([string]$request.Headers['X-CutterMk-Token']) $sessionToken
-        if ($null -eq $beat -or -not ($headerOk -or (Test-CutterMkSecretEquals $beat.Session $sessionToken))) { Send-Json $Context @{error='Invalid session'} 403;return }
-        Register-CutterMkPresence $presence $beat.Tab $beat.Leaving ([datetime]::UtcNow) $beat.Hidden
-        Send-Json $Context @{autoStop=(Test-CutterMkAutoStop);timeoutSeconds=$presence.HeartbeatTimeout};return
+        $beat=ConvertFrom-SnapShackleHeartbeat ([Text.Encoding]::UTF8.GetString((Read-Body $Context 1024)))
+        $headerOk=Test-SnapShackleSecretEquals ([string]$request.Headers['X-SnapShackle-Token']) $sessionToken
+        if ($null -eq $beat -or -not ($headerOk -or (Test-SnapShackleSecretEquals $beat.Session $sessionToken))) { Send-Json $Context @{error='Invalid session'} 403;return }
+        Register-SnapShacklePresence $presence $beat.Tab $beat.Leaving ([datetime]::UtcNow) $beat.Hidden
+        Send-Json $Context @{autoStop=(Test-SnapShackleAutoStop);timeoutSeconds=$presence.HeartbeatTimeout};return
     }
-    if ($request.Headers['X-CutterMk-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
+    if ($request.Headers['X-SnapShackle-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
     if ($path -eq '/api/session/stop' -and $method -eq 'POST') {
-        # End session in the studio. The intent header keeps a stray authenticated request from stopping CutterMk.
-        if ($request.Headers['X-CutterMk-Intent'] -ne 'end-session') { Send-Json $Context @{error='Missing intent'} 400;return }
+        # End session in the studio. The intent header keeps a stray authenticated request from stopping SnapShackle.
+        if ($request.Headers['X-SnapShackle-Intent'] -ne 'end-session') { Send-Json $Context @{error='Missing intent'} 400;return }
         if ($shared.Busy) { Send-Json $Context @{error='A capture is still being saved; try again in a moment'} 409;return }
         Send-Json $Context @{stopped=$true}
         $script:stopReason='End session in the studio.'
         $shared.Quit=$true;return
     }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;ocr=(Test-CutterMkOcr);version=$CutterMkVersion;offline=$true;dpi=$script:CutterMkDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-CutterMkLifecycleMode)};return
+        Send-Json $Context @{capture=$true;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
         Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
           @{name=$_.DeviceName;primary=$_.Primary;left=$_.Bounds.Left;top=$_.Bounds.Top;width=$_.Bounds.Width;height=$_.Bounds.Height}
         })};return
     }
-    if ($path -eq '/api/windows' -and $method -eq 'GET') { Send-Json $Context @{windows=@(Get-CutterMkWindows)};return }
+    if ($path -eq '/api/windows' -and $method -eq 'GET') { Send-Json $Context @{windows=@(Get-SnapShackleWindows)};return }
     if ($path -eq '/api/capture' -and $method -eq 'GET') {
         $q=$request.QueryString
-        Wait-CutterMkDelay (Get-CutterMkDelay $q)
+        Wait-SnapShackleDelay (Get-SnapShackleDelay $q)
         if ($q['window'] -match '^\d+$') {
             # PrintWindow: the window's own pixels, even where the studio or anything else covers it.
-            $png=Get-CutterMkWindowCapture ([long]$q['window'])
-            $Context.Response.Headers.Add('X-CutterMk-Capture-Method',[string]$script:CutterMkLastWindowMethod)
+            $png=Get-SnapShackleWindowCapture ([long]$q['window'])
+            $Context.Response.Headers.Add('X-SnapShackle-Capture-Method',[string]$script:SnapShackleLastWindowMethod)
             Add-CaptureTimingHeaders $Context
             Send-Response $Context $png 'image/png';return
         }
@@ -241,15 +245,15 @@ function Invoke-CutterMkRequest($Context) {
         if ($q['x'] -match '^-?\d+$' -and $q['y'] -match '^-?\d+$' -and $q['w'] -match '^\d+$' -and $q['h'] -match '^\d+$') {
             $r=[Drawing.Rectangle]::new([int]$q['x'],[int]$q['y'],[int]$q['w'],[int]$q['h'])
         }
-        $png=Get-CutterMkRect $r
+        $png=Get-SnapShackleRect $r
         Add-CaptureTimingHeaders $Context
         Send-Response $Context $png 'image/png';return
     }
     if ($path -eq '/api/settings') {
-        if ($method -eq 'GET') { Send-Json $Context (Get-CutterMkSettings $settingsPath);return }
+        if ($method -eq 'GET') { Send-Json $Context (Get-SnapShackleSettings $settingsPath);return }
         if ($method -eq 'PUT') {
             $changes=[Text.Encoding]::UTF8.GetString((Read-Body $Context 16384)) | ConvertFrom-Json
-            $saved=Set-CutterMkSettings $settingsPath $changes
+            $saved=Set-SnapShackleSettings $settingsPath $changes
             $script:stayInTraySetting=[bool]$saved.stayInTray
             Send-Json $Context $saved;return
         }
@@ -262,33 +266,33 @@ function Invoke-CutterMkRequest($Context) {
     }
     if ($path -eq '/api/region' -and $method -eq 'GET') {
         if ($shared.Busy) { Send-Json $Context @{error='A capture is already in progress'} 409;return }
-        Wait-CutterMkDelay (Get-CutterMkDelay $request.QueryString)
+        Wait-SnapShackleDelay (Get-SnapShackleDelay $request.QueryString)
         $shared.Busy=$true
-        try { $bytes=Get-CutterMkRegion } finally { $shared.Busy=$false }
+        try { $bytes=Get-SnapShackleRegion } finally { $shared.Busy=$false }
         if ($null -eq $bytes) { Send-Json $Context @{cancelled=$true} 409 }
         else { Add-CaptureTimingHeaders $Context; Send-Response $Context $bytes 'image/png' }
         return
     }
     if ($path -eq '/api/ocr' -and $method -eq 'POST') {
-        if (-not (Test-CutterMkOcr)) { Send-Json $Context @{error='Windows native OCR unsupported by this PowerShell environment'} 501;return }
+        if (-not (Test-SnapShackleOcr)) { Send-Json $Context @{error='Windows native OCR unsupported by this PowerShell environment'} 501;return }
         $bytes=Read-Body $Context 15000000
         Assert-Png $bytes
-        $result=Invoke-CutterMkOcr $bytes
+        $result=Invoke-SnapShackleOcr $bytes
         Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
     }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
-        Send-Json $Context @{items=@(Get-CutterMkCaptureList $library $request.QueryString['q'] $CaptureNamePattern)};return
+        Send-Json $Context @{items=@(Get-SnapShackleCaptureList $library $request.QueryString['q'] $CaptureNamePattern)};return
     }
     if ($path -eq '/api/library' -and $method -eq 'POST') {
         $bytes=Read-Body $Context 25000000;Assert-Png $bytes
-        $name=Save-CutterMkCapture $library $bytes
+        $name=Save-SnapShackleCapture $library $bytes
         Send-Json $Context @{name=$name}
         # After the reply has gone out: index the text in the image so the library can search it.
-        $null=Update-CutterMkOcrIndex $library $name $bytes
+        $null=Update-SnapShackleOcrIndex $library $name $bytes
         return
     }
     if ($method -eq 'GET' -and $path -match ('^/api/thumb/(' + $CaptureNamePattern + ')$')) {
-        $thumbnail=Get-CutterMkThumbnail $Matches[1]
+        $thumbnail=Get-SnapShackleThumbnail $Matches[1]
         if ($null -eq $thumbnail) { Send-Json $Context @{error='Missing capture'} 404 }
         else { Send-Response $Context $thumbnail 'image/jpeg' }
         return
@@ -310,7 +314,7 @@ function Invoke-CutterMkRequest($Context) {
         if ($method -eq 'PUT') {
             $metadata=[Text.Encoding]::UTF8.GetString((Read-Body $Context 65536)) | ConvertFrom-Json
             # Merge: tags and note change, indexed OCR text is kept.
-            Set-CutterMkMeta $library $name @{ tags=@($metadata.tags | ForEach-Object { [string]$_ }); note=[string]$metadata.note }
+            Set-SnapShackleMeta $library $name @{ tags=@($metadata.tags | ForEach-Object { [string]$_ }); note=[string]$metadata.note }
             Send-Json $Context @{updated=$true};return
         }
     }
@@ -322,42 +326,42 @@ $shared=[hashtable]::Synchronized(@{
     Quit=$false; Busy=$false; Hotkeys=@(); BaseUrl=$base; Server=$server; LastName=$null; TrayReady=$false; TrayIcon=$null
     TrayStopped=$false; StopReason=$null; Stay=$false
 })
-# Lifecycle: auto-stop is on unless -Stay, CUTTERMK_AUTO_STOP=0, or the "stay in the tray" preference
-# (which needs a running tray, so there is always a visible Exit).
-$autoStopEnv=Test-CutterMkAutoStopEnv $env:CUTTERMK_AUTO_STOP
-$script:stayInTraySetting=[bool](Get-CutterMkSettings $settingsPath).stayInTray
-function Test-CutterMkAutoStop {
+# Lifecycle: auto-stop is on unless -Stay, SNAPSHACKLE_AUTO_STOP=0 (or the older CUTTERMK_AUTO_STOP=0),
+# or the "stay in the tray" preference (which needs a running tray, so there is always a visible Exit).
+$autoStopEnv=Test-SnapShackleAutoStopEnv (Get-SnapShackleEnv 'AUTO_STOP')
+$script:stayInTraySetting=[bool](Get-SnapShackleSettings $settingsPath).stayInTray
+function Test-SnapShackleAutoStop {
     if ($Stay -or -not $autoStopEnv) { return $false }
     if ($script:stayInTraySetting -and $shared.TrayReady) { return $false }
     return $true
 }
-function Get-CutterMkLifecycleMode {
+function Get-SnapShackleLifecycleMode {
     if ($Stay) { return 'stay' }
     if (-not $autoStopEnv) { return 'env' }
     if ($script:stayInTraySetting -and $shared.TrayReady) { return 'tray' }
     return 'tab'
 }
 # Without a browser to open, nobody is expected to connect, so there is no first-contact limit.
-$firstContactBy=if ($NoBrowser) { $null } else { [datetime]::UtcNow.AddSeconds($script:CutterMkFirstContactTimeout) }
-$presence=New-CutterMkPresence $firstContactBy
+$firstContactBy=if ($NoBrowser) { $null } else { [datetime]::UtcNow.AddSeconds($script:SnapShackleFirstContactTimeout) }
+$presence=New-SnapShacklePresence $firstContactBy
 $script:stopReason=$null
 if ($Stay -and $NoTray) {
-    Write-Warning '-Stay keeps CutterMk in the tray so it can always be exited from there; -NoTray is ignored.'
+    Write-Warning '-Stay keeps SnapShackle in the tray so it can always be exited from there; -NoTray is ignored.'
     $NoTray=$false
 }
 $shared.Stay=[bool]$Stay
-Write-Host "CutterMk $CutterMkVersion local server: $base" -ForegroundColor Red
+Write-Host "SnapShackle $SnapShackleVersion local server: $base" -ForegroundColor Red
 $runtimeFile=$null
-try { $runtimeFile=Write-CutterMkRuntimeFile $runtimeDir $PID $Port $base ([bool]$Stay) }
+try { $runtimeFile=Write-SnapShackleRuntimeFile $runtimeDir $PID $Port $base ([bool]$Stay) }
 catch { Write-Warning ('Could not write the runtime file in ' + $runtimeDir + ': ' + $_.Exception.Message) }
-# Stop-CutterMk.ps1 and the launcher signal this event, so CutterMk can remove its tray icon and hotkeys itself.
+# Stop-SnapShackle.ps1 and the launcher signal this event, so SnapShackle can remove its tray icon and hotkeys itself.
 $stopEvent=$null
-try { $stopEvent=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,(Get-CutterMkStopEventName $PID)) }
+try { $stopEvent=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,(Get-SnapShackleStopEventName $PID)) }
 catch { $stopEvent=$null }
 $tray=$null
 if (-not $NoTray) {
     try {
-        $tray=Start-CutterMkTray $root $library $shared
+        $tray=Start-SnapShackleTray $root $library $shared
         for ($i=0; $i -lt 30 -and -not $shared.TrayReady -and -not $shared.TrayError; $i++) { Start-Sleep -Milliseconds 100 }
         if ($shared.TrayError) { Write-Warning ('Hotkeys and tray unavailable: ' + $shared.TrayError) }
         foreach ($h in $shared.Hotkeys) {
@@ -367,15 +371,15 @@ if (-not $NoTray) {
     } catch { Write-Warning ('Hotkeys and tray unavailable: ' + $_.Exception.Message) }
 }
 if ($Stay -and -not $shared.TrayReady) {
-    # Staying without a tray would leave a hidden process with no way out: the tab owns CutterMk after all.
-    Write-Warning '-Stay needs the tray icon (it holds Exit), which is unavailable; closing the studio tab will stop CutterMk.'
+    # Staying without a tray would leave a hidden process with no way out: the tab owns SnapShackle after all.
+    Write-Warning '-Stay needs the tray icon (it holds Exit), which is unavailable; closing the studio tab will stop SnapShackle.'
     $Stay=$false; $shared.Stay=$false
 }
-switch (Get-CutterMkLifecycleMode) {
-    'stay' { Write-Host 'Staying in the tray after the studio tab closes (-Stay). Exit in the tray menu, End session in the studio, Stop-CutterMk.ps1 or Ctrl+C stops it.' }
-    'env' { Write-Host 'CUTTERMK_AUTO_STOP=0: CutterMk keeps running after the studio tab closes. End session, Exit in the tray menu, Stop-CutterMk.ps1 or Ctrl+C stops it.' }
-    'tray' { Write-Host 'Preference "stay in the tray" is on: CutterMk keeps its hotkeys after the studio tab closes. Exit in the tray menu stops it.' }
-    default { Write-Host 'Closing the studio tab stops CutterMk, its tray icon and hotkeys (start with -Stay to keep them). Ctrl+C, End session or Exit in the tray menu also stop it.' }
+switch (Get-SnapShackleLifecycleMode) {
+    'stay' { Write-Host 'Staying in the tray after the studio tab closes (-Stay). Exit in the tray menu, End session in the studio, Stop-SnapShackle.ps1 or Ctrl+C stops it.' }
+    'env' { Write-Host 'SNAPSHACKLE_AUTO_STOP=0: SnapShackle keeps running after the studio tab closes. End session, Exit in the tray menu, Stop-SnapShackle.ps1 or Ctrl+C stops it.' }
+    'tray' { Write-Host 'Preference "stay in the tray" is on: SnapShackle keeps its hotkeys after the studio tab closes. Exit in the tray menu stops it.' }
+    default { Write-Host 'Closing the studio tab stops SnapShackle, its tray icon and hotkeys (start with -Stay to keep them). Ctrl+C, End session or Exit in the tray menu also stop it.' }
 }
 if (-not $NoBrowser) {
     try { Start-Process $base }
@@ -388,22 +392,22 @@ try {
     while (-not $shared.Quit) {
         $context=$null
         try {
-            if ($null -ne $stopEvent -and $stopEvent.WaitOne(0)) { $script:stopReason='Stop-CutterMk.ps1 or a new launch asked CutterMk to stop.'; break }
+            if ($null -ne $stopEvent -and $stopEvent.WaitOne(0)) { $script:stopReason='Stop-SnapShackle.ps1 or a new launch asked SnapShackle to stop.'; break }
             # A gap since the last pass (the PC slept, or a long region selection held this thread) means the
             # tabs could not be heard: they get a fresh grace period.
-            $gap=Step-CutterMkPresenceClock $presence ([datetime]::UtcNow)
+            $gap=Step-SnapShacklePresenceClock $presence ([datetime]::UtcNow)
             # Wait at most half a second for a client, so the checks run (and Ctrl+C is handled) while idle.
             if (-not $server.Listener.Server.Poll(500000,[Net.Sockets.SelectMode]::SelectRead)) {
                 # Only when idle: queued heartbeats are always read first. Requests run on this thread, so a
                 # studio capture or save is never cut off; a hotkey capture on the tray thread sets Busy.
                 if (-not $gap) {
-                    $reason=Get-CutterMkStopReason $presence ([datetime]::UtcNow) ([bool]$shared.Busy) (Test-CutterMkAutoStop)
-                    if ($reason) { $script:stopReason=$reason + ' (Start with -Stay or set CUTTERMK_AUTO_STOP=0 to keep it running.)'; break }
+                    $reason=Get-SnapShackleStopReason $presence ([datetime]::UtcNow) ([bool]$shared.Busy) (Test-SnapShackleAutoStop)
+                    if ($reason) { $script:stopReason=$reason + ' (Start with -Stay or set SNAPSHACKLE_AUTO_STOP=0 to keep it running.)'; break }
                 }
                 continue
             }
             $context=$server.Accept()
-            Invoke-CutterMkRequest $context
+            Invoke-SnapShackleRequest $context
         } catch [System.IO.InvalidDataException] {
             Write-Warning ('Rejected malformed local HTTP request: ' + $_.Exception.Message)
         } catch {
@@ -421,12 +425,12 @@ try {
     # A hotkey capture may still be saving to the library: let it finish (bounded) before the tray goes.
     for ($i=0; $i -lt 300 -and $shared.Busy; $i++) { Start-Sleep -Milliseconds 100 }
     $shared.Quit=$true
-    $trayClean=Stop-CutterMkTray $tray $shared
+    $trayClean=Stop-SnapShackleTray $tray $shared
     try { $server.Dispose() } catch {}
-    Remove-CutterMkRuntimeFile $runtimeFile
+    Remove-SnapShackleRuntimeFile $runtimeFile
     if ($null -ne $stopEvent) { $stopEvent.Dispose() }
     if ($script:stopReason) { Write-Host $script:stopReason -ForegroundColor DarkGray }
-    Write-Host 'CutterMk stopped.'
+    Write-Host 'SnapShackle stopped.'
     # A tray thread that did not finish would keep this process alive; it has nothing left to save.
     if (-not $trayClean) { [Environment]::Exit(0) }
 }

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 image = Image.new('RGB', (900, 580), '#f3f5fa')
 draw = ImageDraw.Draw(image)
 draw.rectangle((50, 45, 400, 300), fill='#38bde1', outline='#1c4c64', width=4)
-draw.text((60, 70), 'CUTTERMK TEST IMAGE', fill='#121a28')
+draw.text((60, 70), 'SNAPSHACKLE TEST IMAGE', fill='#121a28')
 stream = io.BytesIO()
 image.save(stream, 'PNG')
 image_b64 = base64.b64encode(stream.getvalue()).decode()
@@ -27,15 +27,15 @@ MOCK = r"""(imageBase64) => {
     if(url.startsWith('/api/screens'))return json({screens:[{name:'TEST',primary:true}]});
     if(url.startsWith('/api/windows'))return json({windows:[{Title:'Mock window',Id:123}]});
     if(url.startsWith('/api/capture')||url.startsWith('/api/region'))return new Response(bytes,{status:200,headers:{'Content-Type':'image/png','Server-Timing':'acquire;dur=11.2, encode;dur=25.4, selection;dur=0'}});
-    if(url.startsWith('/api/library')&&options.method==='POST'){window.__library=bytes;return json({name:'CutterMk-Mock.png'})}
-    if(url.startsWith('/api/thumb/CutterMk-')){window.__thumbRequests=(window.__thumbRequests||0)+1;return new Response(bytes,{status:200,headers:{'Content-Type':'image/jpeg'}})}
-    if(url.startsWith('/api/library/CutterMk-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
-    if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'CutterMk-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
+    if(url.startsWith('/api/library')&&options.method==='POST'){window.__library=bytes;return json({name:'SnapShackle-Mock.png'})}
+    if(url.startsWith('/api/thumb/SnapShackle-')){window.__thumbRequests=(window.__thumbRequests||0)+1;return new Response(bytes,{status:200,headers:{'Content-Type':'image/jpeg'}})}
+    if(url.startsWith('/api/library/SnapShackle-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
+    if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'SnapShackle-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
     if(url.startsWith('/api/ocr'))return json({text:'Contact j.smith@navy.mil or 757-555-0142 Nautilus',engine:'mock',lines:[{text:'Contact j.smith@navy.mil or 757-555-0142',words:[{text:'Contact',x:60,y:100,w:70,h:20},{text:'j.smith@navy.mil',x:140,y:100,w:160,h:20},{text:'or',x:310,y:100,w:20,h:20},{text:'757-555-0142',x:340,y:100,w:120,h:20}]},{text:'Nautilus',words:[{text:'Nautilus',x:60,y:200,w:80,h:20}]}]});
-    if(url.startsWith('/api/settings')){if(options.method==='PUT'){window.__settings=JSON.parse(options.body);return json({...window.__settings,saved:true})}return json(window.__settings?{...window.__settings,saved:true}:{namePrefix:'CutterMk',autoLibrary:false,recordFps:6,saved:false})}
-    if(url.startsWith('/api/heartbeat')){const b=JSON.parse(options.body||'{}');(window.__beats=window.__beats||[]).push({...b,token:(options.headers||{})['X-CutterMk-Token']});return json({autoStop:true,timeoutSeconds:20})}
-    if(url.startsWith('/api/session/stop')){window.__stopIntent=(options.headers||{})['X-CutterMk-Intent'];return json({stopped:true})}
-    if(url.startsWith('/api/events')){const since=Number((url.match(/since=(\d+)/)||[])[1]||0);return json(window.__hotkey&&since<7?{events:[{id:7,type:'capture',name:'CutterMk-Hot.png',source:'region'}],latest:7}:{events:[],latest:window.__hotkey?7:3})}
+    if(url.startsWith('/api/settings')){if(options.method==='PUT'){window.__settings=JSON.parse(options.body);return json({...window.__settings,saved:true})}return json(window.__settings?{...window.__settings,saved:true}:{namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,saved:false})}
+    if(url.startsWith('/api/heartbeat')){const b=JSON.parse(options.body||'{}');(window.__beats=window.__beats||[]).push({...b,token:(options.headers||{})['X-SnapShackle-Token']});return json({autoStop:true,timeoutSeconds:20})}
+    if(url.startsWith('/api/session/stop')){window.__stopIntent=(options.headers||{})['X-SnapShackle-Intent'];return json({stopped:true})}
+    if(url.startsWith('/api/events')){const since=Number((url.match(/since=(\d+)/)||[])[1]||0);return json(window.__hotkey&&since<7?{events:[{id:7,type:'capture',name:'SnapShackle-Hot.png',source:'region'}],latest:7}:{events:[],latest:window.__hotkey?7:3})}
     return json({error:'not found'},404);
   };
   window.__beacons=[];
@@ -43,7 +43,7 @@ MOCK = r"""(imageBase64) => {
 }"""
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, executable_path=os.environ.get('CUTTERMK_CHROMIUM') or None, args=['--no-sandbox'])
+    browser = p.chromium.launch(headless=True, executable_path=os.environ.get('SNAPSHACKLE_CHROMIUM') or os.environ.get('CUTTERMK_CHROMIUM') or None, args=['--no-sandbox'])
     page = browser.new_page(viewport={'width':1440,'height':950}, accept_downloads=True)
     errors = []
     page.on('pageerror', lambda error:errors.append(str(error)))
@@ -115,7 +115,7 @@ with sync_playwright() as p:
     page.wait_for_function('document.querySelector("#status").textContent.includes("Hotkey capture opened")', timeout=6000)
     assert page.evaluate("document.querySelector('#canvas').width")==900, 'Hotkey capture was not loaded'
     # First run copies browser preferences to the host; saving goes to the host.
-    page.wait_for_function('window.__settings && window.__settings.namePrefix==="CutterMk"', timeout=6000)
+    page.wait_for_function('window.__settings && window.__settings.namePrefix==="SnapShackle"', timeout=6000)
     page.locator('#tabWorkflows').click()
     page.locator('#prefix').fill('Ops')
     page.locator('#settingsSave').click()
@@ -192,7 +192,7 @@ with sync_playwright() as p:
     page.locator('#endSession').click()
     page.wait_for_selector('.session-ended', timeout=6000)
     assert page.evaluate('window.__stopIntent') == 'end-session'
-    assert 'CutterMk has stopped' in page.locator('.session-ended').inner_text()
+    assert 'SnapShackle has stopped' in page.locator('.session-ended').inner_text()
     assert not errors, 'JS errors: '+repr(errors)
     print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, theme toggle, tool shortcuts, heartbeat/beacon, End session')
     browser.close()

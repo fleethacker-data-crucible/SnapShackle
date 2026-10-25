@@ -4,11 +4,11 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 root = Path(__file__).resolve().parents[1]
-executable = os.environ.get('CUTTERMK_CHROMIUM') or None
+executable = os.environ.get('SNAPSHACKLE_CHROMIUM') or os.environ.get('CUTTERMK_CHROMIUM') or None
 
 CHECK = r'''async()=>{
   const canvas=document.createElement('canvas');document.body.append(canvas);
-  const editor=new CutterMkEditor(canvas);
+  const editor=new SnapShackleEditor(canvas);
   // White 400x200 image with a 6px black bar at x=100..105.
   const src=document.createElement('canvas');src.width=400;src.height=200;const c=src.getContext('2d');
   c.fillStyle='#fff';c.fillRect(0,0,400,200);c.fillStyle='#000';c.fillRect(100,0,6,200);
