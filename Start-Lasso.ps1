@@ -187,7 +187,7 @@ function Invoke-LassoRequest($Context) {
         $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__LASSO_VERSION__',$LassoVersion)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
     }
-    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact)\.js$') {
+    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme)\.js$') {
         $filename=$Matches[1]+'.js'
         $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($source)) 'application/javascript; charset=utf-8';return
