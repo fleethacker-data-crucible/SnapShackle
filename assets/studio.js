@@ -6,7 +6,7 @@ const TOKEN='__SESSION_TOKEN__';
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-Lasso-Token':TOKEN}});
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'Lasso',autoLibrary:false,recordFps:6};
+let settings={namePrefix:'Lasso',autoLibrary:false,recordFps:6,stayInTray:false};
 // Read SnipHero-era settings once so a rename does not reset preferences.
 try {const saved=localStorage.getItem('lasso-settings')??localStorage.getItem('sniphero-settings');settings={...settings,...JSON.parse(saved||'{}')};if(settings.namePrefix==='SnipHero')settings.namePrefix='Lasso'}catch{}
 function notify(message){$('#status').textContent=message}
@@ -237,21 +237,21 @@ $('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.tr
   notify('Reading text…');const r=await recognize();const hits=LassoRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
   notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
-function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps}
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
 async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
-    if(saved.saved){settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps}}
+    if(saved.saved){settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray}}
     else{await saveSettings(false)}  // First run: move browser-stored preferences to the host once.
     showSettings()}catch(e){console.warn('[Lasso] settings',e)}
 }
 async function saveSettings(announce=true){
   try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{}
   const r=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)});
-  if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps};
+  if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray};
   if(announce){showSettings();notify('Preferences saved')}
 }
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));saveSettings().catch(fail)};
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));saveSettings().catch(fail)};
 showSettings();
 document.addEventListener('keydown',event=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
@@ -261,14 +261,15 @@ document.addEventListener('keydown',event=>{
   else if(event.ctrlKey&&event.shiftKey&&key==='s'){event.preventDefault();$('#region').click()}
   else if(event.ctrlKey&&event.shiftKey&&key==='p'){event.preventDefault();$('#projectSave').click()}
 });
-async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';
+const lifecycleText={tab:'stops when this tab closes',stay:'stays in the tray (--stay); Exit in the tray menu',tray:'stays in the tray (preference); Exit in the tray menu',env:'keeps running (LASSO_AUTO_STOP=0)'};
+async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none',life='unknown';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';life=lifecycleText[d.lifecycle]||'unknown';
    const list=(d.hotkeys||[]).filter(h=>h.keys).map(h=>h.keys+' '+h.action);keys=list.length?list.join(', '):'none registered';const help=$('#globalHotkeys');if(help)help.textContent=keys}}catch{}
- $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
+ $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nLasso session: '+life+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
 // Hotkey captures happen while the browser is in the background; poll for them.
 let lastEvent=null,eventsBusy=false;
 async function openCapture(name,label){const r=await api('/api/library/'+encodeURIComponent(name));if(!r.ok)throw Error('Capture not found');await loadImage(await r.blob(),label||name,{autoSave:false});librarySelection=name}
 async function pollEvents(){
-  if(eventsBusy||document.hidden)return;eventsBusy=true;
+  if(eventsBusy||document.hidden||sessionEnded)return;eventsBusy=true;
   try{const r=await api('/api/events?since='+(lastEvent??0));if(!r.ok)return;const d=await r.json();
     if(lastEvent===null){lastEvent=d.latest||0;return}
     const captures=(d.events||[]).filter(e=>e.type==='capture');lastEvent=Math.max(lastEvent,d.latest||0);
@@ -278,5 +279,37 @@ async function pollEvents(){
 setInterval(pollEvents,1500);document.addEventListener('visibilitychange',pollEvents);window.addEventListener('focus',pollEvents);
 async function openFromHash(){const m=location.hash.match(/^#open=((?:Lasso|SnipHero)-[A-Za-z0-9_.-]+\.png)$/);if(!m)return;history.replaceState(null,'',location.pathname);try{await openCapture(m[1],'Hotkey capture')}catch(e){fail(e)}}
 window.addEventListener('hashchange',openFromHash);
+// The studio tab owns the local server (and its tray icon and hotkeys): a heartbeat every 5 s and a
+// "leaving" beacon on pagehide. Lasso stops about 5 s after the last open studio tab goes; a reload
+// heartbeats again well inside that. Each page load has its own id, so with two tabs open, closing one
+// keeps Lasso running.
+let sessionEnded=false;
+const tabId=(globalThis.crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now().toString(36))).replace(/[^A-Za-z0-9-]/g,'').slice(0,64);
+function heartbeat(leaving=false){
+  if(sessionEnded)return;
+  try{api('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tab:tabId,leaving,hidden:document.hidden}),keepalive:true}).catch(()=>{})}catch{}
+}
+function leavingSignal(){
+  if(sessionEnded)return;
+  // sendBeacon is what browsers deliver during unload; it cannot set headers, so the token goes in the body (this route only).
+  let sent=false;
+  try{sent=!!navigator.sendBeacon?.('/api/heartbeat',new Blob([JSON.stringify({tab:tabId,leaving:true,session:TOKEN})],{type:'application/json'}))}catch{sent=false}
+  if(!sent)heartbeat(true);
+}
+heartbeat();setInterval(()=>heartbeat(),5000);
+window.addEventListener('pagehide',leavingSignal);
+window.addEventListener('pageshow',event=>{if(event.persisted)heartbeat()});
+document.addEventListener('visibilitychange',()=>heartbeat());
+function showSessionEnded(){
+  const screen=document.createElement('div');screen.className='session-ended';screen.setAttribute('role','alert');
+  screen.innerHTML='<div><h1>Lasso has stopped</h1><p>The local server, tray icon and global hotkeys are off. Close this tab, or run Lasso.bat to start a new session.</p></div>';
+  document.body.append(screen);document.title='Lasso Studio (stopped)';
+}
+$('#endSession').onclick=async()=>{
+  if(!confirm('End this Lasso session? The local server, tray icon and global hotkeys stop. Unsaved edits in this tab are lost.'))return;
+  try{const r=await api('/api/session/stop',{method:'POST',headers:{'Content-Type':'application/json','X-Lasso-Intent':'end-session'},body:'{}'});
+    if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'Could not end the session')}
+    sessionEnded=true;showSessionEnded()}catch(e){fail(e)}
+};
 refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();loadSettings();
 })();

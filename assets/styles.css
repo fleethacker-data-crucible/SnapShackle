@@ -4,3 +4,4 @@
 .redact-row{display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;background:rgba(255,255,255,.04);color:inherit}
 .redact-row b{color:var(--text,#fff);font-weight:600}
 .redact-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Consolas,monospace}
+.session-ended{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:50;padding:24px}.session-ended div{max-width:60ch}.session-ended h1{font-size:22px;margin:0 0 10px}.session-ended p{color:var(--muted)}

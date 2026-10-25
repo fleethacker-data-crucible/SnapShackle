@@ -21,7 +21,7 @@ jobs:
           if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
           New-Item -ItemType Directory $stage | Out-Null
           # Runtime only: no tests, dev launcher, CI config or docs images.
-          foreach ($item in 'Lasso.bat','Start-Lasso.ps1','VERSION','index.html','README.md','assets','modules') {
+          foreach ($item in 'Lasso.bat','Start-Lasso.ps1','Stop-Lasso.ps1','VERSION','index.html','README.md','assets','modules') {
             Copy-Item $item -Destination $stage -Recurse
           }
           $zip = Join-Path $env:RUNNER_TEMP "Lasso-$version.zip"
