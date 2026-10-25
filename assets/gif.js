@@ -2,7 +2,7 @@
    A conservative approach: larger than optimized GIFs, but valid across decoders. */
 (() => {
 'use strict';
-window.LassoGif={encode(frames,width,height,delay=150){
+window.CutterMkGif={encode(frames,width,height,delay=150){
  if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>640||height>480||!frames.length||frames.length>100)throw Error('GIF dimensions or frame count exceed safe limits');
  const parts=[],write=n=>parts.push(n&255),write16=n=>{write(n);write(n>>>8)},writeStr=s=>{for(let i=0;i<s.length;i++)write(s.charCodeAt(i))};
  writeStr('GIF89a');write16(width);write16(height);write(0xF7);write(0);write(0);

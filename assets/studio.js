@@ -1,19 +1,19 @@
-/* Lasso Studio controller — browser APIs and local-only PowerShell routes. */
+/* CutterMk Studio controller — browser APIs and local-only PowerShell routes. */
 (() => {
 'use strict';
 const $=selector=>document.querySelector(selector);
 const TOKEN='__SESSION_TOKEN__';
 // Sets a button to an icon plus a label (used for buttons whose state changes, e.g. Record/Stop).
-function setButton(el,iconName,label,live=false){el.innerHTML=LassoIcons.icon(iconName)+'<span>'+label+'</span>';el.classList.toggle('is-live',live)}
-const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-Lasso-Token':TOKEN}});
+function setButton(el,iconName,label,live=false){el.innerHTML=CutterMkIcons.icon(iconName)+'<span>'+label+'</span>';el.classList.toggle('is-live',live)}
+const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-CutterMk-Token':TOKEN}});
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'Lasso',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.LassoTheme?.choice)||'dark'};
-// Read SnipHero-era settings once so a rename does not reset preferences.
-try {const saved=localStorage.getItem('lasso-settings')??localStorage.getItem('sniphero-settings');settings={...settings,...JSON.parse(saved||'{}')};if(settings.namePrefix==='SnipHero')settings.namePrefix='Lasso'}catch{}
+let settings={namePrefix:'CutterMk',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.CutterMkTheme?.choice)||'dark'};
+// Read preferences saved under earlier names (Lasso, SnipHero) so a rename does not reset them.
+try {const saved=localStorage.getItem('cuttermk-settings')??localStorage.getItem('lasso-settings')??localStorage.getItem('sniphero-settings');settings={...settings,...JSON.parse(saved||'{}')};if(['SnipHero','Lasso'].includes(settings.namePrefix))settings.namePrefix='CutterMk'}catch{}
 function notify(message){$('#status').textContent=message}
-function fail(error){console.error('[Lasso]',error);notify('⚠ '+(error?.message||error))}
-function sanitizePrefix(s){return (s||'Lasso').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'Lasso'}
+function fail(error){console.error('[CutterMk]',error);notify('⚠ '+(error?.message||error))}
+function sanitizePrefix(s){return (s||'CutterMk').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'CutterMk'}
 function downloadName(extension){return `${sanitizePrefix(settings.namePrefix)}-${new Date().toISOString().replace(/[:.]/g,'-')}.${extension}`}
 function download(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),20000)}
 function fileDataURL(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file)})}
@@ -21,7 +21,7 @@ function setFileName(name){$('#fileName').textContent=name||'Untitled image'}
 function fitZoom(){const area=$('#canvasScroller');let fit=Math.max(25,Math.min(100,Math.floor((area.clientWidth-80)/canvas.width*100/5)*5));setZoom(fit)}
 function setZoom(z){z=Math.max(25,Math.min(200,Number(z)||100));$('#zoom').value=z;$('#zoomLabel').textContent=z+'%';canvas.style.width=(canvas.width*z/100)+'px';canvas.style.height=(canvas.height*z/100)+'px'}
 let lastLayersSignature='',lastCaptureTiming='No capture timed yet';
-const editor=new LassoEditor(canvas,(instance)=>{
+const editor=new CutterMkEditor(canvas,(instance)=>{
   $('#dims').textContent=instance.canvas.width+' × '+instance.canvas.height;
   // Pointer movement redraws the canvas frequently. Rebuild layer buttons ONLY when
   // their contents or the selected layer changed, not for every pen/drag frame.
@@ -55,7 +55,7 @@ async function capture(endpoint){
   notify('Capturing desktop…');const start=performance.now();
   let response=await api(endpoint);
   if(!response.ok){let data=await response.json().catch(()=>({}));throw Error(data.cancelled?'Region capture cancelled':data.error||'Capture failed')}
-  const blob=await response.blob(),received=performance.now(),method=response.headers.get('X-Lasso-Capture-Method');
+  const blob=await response.blob(),received=performance.now(),method=response.headers.get('X-CutterMk-Capture-Method');
   const timing=parseServerTiming(response.headers.get('Server-Timing'));
   await loadImage(blob,'Desktop capture');const ready=performance.now();
   const transfer=Math.round(received-start),decode=Math.round(ready-received);
@@ -63,7 +63,7 @@ async function capture(endpoint){
   const select=timing.selection>0?` (includes ${Math.round(timing.selection)} ms choosing region)`:'';
   const via=method==='PrintWindow'?' · window content (covering windows ignored)':method==='screen'?' · screen pixels (app did not support PrintWindow)':'';
   lastCaptureTiming=`${native}request/transfer ${transfer} ms, browser display ${decode} ms, ${Math.round(ready-start)} ms overall${select}${via}`;
-  console.info('[Lasso] capture timing:',lastCaptureTiming,'image size:',Math.round(blob.size/1024),'KiB');
+  console.info('[CutterMk] capture timing:',lastCaptureTiming,'image size:',Math.round(blob.size/1024),'KiB');
   const diagnostic=$('#diagnostics');
   if(diagnostic)diagnostic.textContent=diagnostic.textContent.replace(/Last screenshot:[^\n]*/, 'Last screenshot: '+lastCaptureTiming);
   notify('Screenshot ready · '+lastCaptureTiming);
@@ -86,7 +86,7 @@ $('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScre
 const toolNames={select:['select','Select','V'],arrow:['arrow','Arrow','A'],rectangle:['rectangle','Rectangle','R'],ellipse:['ellipse','Ellipse','E'],line:['line','Line','L'],pen:['pen','Pen','P'],highlight:['highlight','Highlight','H'],text:['text','Text','T'],step:['step','Steps','N'],crop:['crop','Crop','C'],redact:['redact','Redact','X'],pixelate:['pixelate','Pixelate','Q'],blur:['blur','Blur','B']};
 const toolKeys={};
 for(let [tool,[iconName,title,key]] of Object.entries(toolNames)){let button=document.createElement('button');button.className='tool';
-  button.innerHTML=LassoIcons.icon(iconName)+'<span>'+title+'</span><span class="tool-key" aria-hidden="true">'+key+'</span>';button.title=title+' ('+key+')';button.dataset.tool=tool;button.setAttribute('aria-keyshortcuts',key);toolKeys[key.toLowerCase()]=button;
+  button.innerHTML=CutterMkIcons.icon(iconName)+'<span>'+title+'</span><span class="tool-key" aria-hidden="true">'+key+'</span>';button.title=title+' ('+key+')';button.dataset.tool=tool;button.setAttribute('aria-keyshortcuts',key);toolKeys[key.toLowerCase()]=button;
   button.onclick=()=>{editor.tool=tool;for(let b of $('#tools').children)b.classList.toggle('active',b===button);notify('Tool: '+title)};$('#tools').append(button)}
 $('#tools').firstElementChild.click();
 // Drag-to-crop keeps annotations editable; afterwards the select tool comes back.
@@ -102,7 +102,7 @@ $('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in p
 $('#zoom').oninput=e=>setZoom(e.target.value);$('#zoomFit').onclick=fitZoom;
 $('#clear').onclick=()=>loadImage('data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="white"/></svg>'),'Blank image').catch(fail);
 $('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(!f.type.startsWith('image/'))throw Error('Choose an image file');await loadImage(f,f.name)}}catch(ex){fail(ex)}finally{e.target.value=''}};
-$('#projectSave').onclick=async()=>{try{const project=await editor.portableProject();download(new Blob([JSON.stringify(project)],{type:'application/json'}),downloadName('lasso.json'))}catch(e){fail(e)}};
+$('#projectSave').onclick=async()=>{try{const project=await editor.portableProject();download(new Blob([JSON.stringify(project)],{type:'application/json'}),downloadName('cuttermk.json'))}catch(e){fail(e)}};
 $('#projectOpen').onclick=()=>$('#projectFile').click();$('#projectFile').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(f.size>60_000_000)throw Error('Project file too large');await editor.load(JSON.parse(await f.text()));setFileName(f.name);fitZoom();notify('Editable project loaded')}}catch(ex){fail(ex)}finally{e.target.value=''}};
 $('#png').onclick=()=>editor.export('image/png').then(b=>{download(b,downloadName('png'));notify('PNG exported')}).catch(fail);
 $('#jpg').onclick=()=>editor.export('image/jpeg').then(b=>{download(b,downloadName('jpg'));notify('JPEG exported')}).catch(fail);
@@ -120,7 +120,7 @@ function queueThumbnail(image,name,generation){
   pumpThumbnails();
 }
 function pumpThumbnails(){
-  // Limit competing requests on Lasso's single-threaded local server.
+  // Limit competing requests on CutterMk's single-threaded local server.
   while(thumbnailActive<2&&thumbnailQueue.length){
     const job=thumbnailQueue.shift();if(job.generation!==thumbnailGeneration||!job.image.isConnected)continue;
     thumbnailActive++;
@@ -176,7 +176,7 @@ $('#record').onclick=async()=>{
 $('#gif').onclick=async()=>{
  if(recorder||scrollInterval)return notify('Finish video or scrolling capture before recording GIF');
  if(gifInterval){clearInterval(gifInterval);gifInterval=null;recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;
-   try{if(!gifFrames.length)throw Error('No recorded GIF frames');let blob=LassoGif.encode(gifFrames,gifCanvas.width,gifCanvas.height,Math.round(1000/settings.recordFps));download(blob,downloadName('gif'));notify('Animated GIF exported · '+gifFrames.length+' frames')}catch(e){fail(e)}finally{gifFrames=[];setButton($('#gif'),'gif','GIF')}return}
+   try{if(!gifFrames.length)throw Error('No recorded GIF frames');let blob=CutterMkGif.encode(gifFrames,gifCanvas.width,gifCanvas.height,Math.round(1000/settings.recordFps));download(blob,downloadName('gif'));notify('Animated GIF exported · '+gifFrames.length+' frames')}catch(e){fail(e)}finally{gifFrames=[];setButton($('#gif'),'gif','GIF')}return}
  try{recordStream=await getSharedScreen();const video=await videoFor(recordStream);gifCanvas=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth,480/video.videoHeight);gifCanvas.width=Math.max(2,Math.round(video.videoWidth*scale));gifCanvas.height=Math.max(2,Math.round(video.videoHeight*scale));
    gifFrames=[];const ctx=gifCanvas.getContext('2d',{willReadFrequently:true});for(let track of recordStream.getVideoTracks())track.onended=()=>{if(gifInterval)$('#gif').click()};
    gifInterval=setInterval(()=>{if(gifFrames.length>=100){$('#gif').click();return}ctx.drawImage(video,0,0,gifCanvas.width,gifCanvas.height);gifFrames.push(ctx.getImageData(0,0,gifCanvas.width,gifCanvas.height).data.slice());notify('GIF recording · '+gifFrames.length+'/100 frames')},1000/settings.recordFps);
@@ -209,7 +209,7 @@ $('#scrollAuto').onclick=async()=>{
  }catch(e){scrollStream?.getTracks().forEach(t=>t.stop());scrollStream=null;fail(e)}
 };
 $('#scrollAdd').onclick=async()=>{try{if(stitchTiles.length>=35)throw Error('Maximum 35 tiles');const blob=await editor.export();stitchTiles.push(await createImageBitmap(blob));$('#stitchCount').textContent=stitchTiles.length+' tiles queued';notify('Tile '+stitchTiles.length+' added — scroll the target and capture again')}catch(e){fail(e)}};
-$('#scrollFinish').onclick=async()=>{try{let result=await LassoStitch.stitch(stitchTiles,{autoOverlap:$('#alignOverlap').checked});for(let im of stitchTiles)im.close?.();stitchTiles=[];$('#stitchCount').textContent='0 tiles queued';await loadImage(result.canvas.toDataURL('image/png'),'Long screenshot');notify('Stitched '+result.overlaps.length+' tiles · overlap removed '+result.overlaps.reduce((a,b)=>a+b,0)+' px')}catch(e){fail(e)}};
+$('#scrollFinish').onclick=async()=>{try{let result=await CutterMkStitch.stitch(stitchTiles,{autoOverlap:$('#alignOverlap').checked});for(let im of stitchTiles)im.close?.();stitchTiles=[];$('#stitchCount').textContent='0 tiles queued';await loadImage(result.canvas.toDataURL('image/png'),'Long screenshot');notify('Stitched '+result.overlaps.length+' tiles · overlap removed '+result.overlaps.reduce((a,b)=>a+b,0)+' px')}catch(e){fail(e)}};
 // OCR the current image (annotations included). Native Windows OCR returns word boxes;
 // the browser fallback returns line boxes only.
 async function recognize(){
@@ -218,7 +218,7 @@ async function recognize(){
   const nativeFailure=(await response.json().catch(()=>({}))).error||'Windows OCR failed';
   if(typeof TextDetector==='undefined')throw Error(nativeFailure+'; browser OCR is also unavailable');
   const found=await new TextDetector().detect(await createImageBitmap(blob));
-  return {text:found.map(x=>x.rawValue).join('\n'),lines:LassoRedact.fromTextDetector(found),engine:'Browser OCR'};
+  return {text:found.map(x=>x.rawValue).join('\n'),lines:CutterMkRedact.fromTextDetector(found),engine:'Browser OCR'};
 }
 $('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
 // Smart redaction: OCR, detect, let the person untick false positives, then cover with solid boxes.
@@ -232,21 +232,21 @@ function renderFindings(){
     const kind=document.createElement('b');kind.textContent=f.label;const text=document.createElement('span');text.textContent=f.text.length>36?f.text.slice(0,33)+'…':f.text;row.append(box,kind,text);root.append(row)});
   $('#redactApply').hidden=false;$('#redactApply').textContent=`Redact ${redactFindings.length} checked`;
 }
-$('#redactFind').onclick=async()=>{try{notify('Reading text…');const r=await recognize();redactFindings=LassoRedact.detect(r.lines);renderFindings();
+$('#redactFind').onclick=async()=>{try{notify('Reading text…');const r=await recognize();redactFindings=CutterMkRedact.detect(r.lines);renderFindings();
   notify(redactFindings.length?`Found ${redactFindings.length} item(s) to redact (${r.engine}). Untick any you want to keep.`:`No sensitive text found (${r.engine})`)}catch(e){fail(e)}};
 $('#redactFindings').onchange=()=>{const n=[...$('#redactFindings').querySelectorAll('input:checked')].length;$('#redactApply').textContent=`Redact ${n} checked`};
 $('#redactApply').onclick=()=>{const picked=[...$('#redactFindings').querySelectorAll('input:checked')].map(x=>redactFindings[+x.dataset.index]);
   const n=applyRedactions(picked.map(f=>f.box));redactFindings=[];$('#redactFindings').replaceChildren();$('#redactApply').hidden=true;
   notify(n?`Added ${n} solid redaction box(es). Undo removes them in one step.`:'Nothing selected')};
 $('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.trim();if(!term)return notify('Type a word or phrase to redact');
-  notify('Reading text…');const r=await recognize();const hits=LassoRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
+  notify('Reading text…');const r=await recognize();const hits=CutterMkRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
   notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
 function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#theme').value=settings.theme;applyTheme(settings.theme)}
 // Theme follows ARC: dark by default, light on request, or match Windows.
-function applyTheme(choice){const theme=window.LassoTheme?LassoTheme.apply(choice):'dark';const toggle=$('#themeToggle');
-  if(toggle){toggle.innerHTML=LassoIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
-$('#themeToggle').onclick=()=>{settings.theme=(window.LassoTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
+function applyTheme(choice){const theme=window.CutterMkTheme?CutterMkTheme.apply(choice):'dark';const toggle=$('#themeToggle');
+  if(toggle){toggle.innerHTML=CutterMkIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
+$('#themeToggle').onclick=()=>{settings.theme=(window.CutterMkTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
 $('#theme').onchange=()=>{settings.theme=$('#theme').value;applyTheme(settings.theme)};
 function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme}}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
@@ -254,10 +254,10 @@ async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
     if(saved.saved){settings=fromHost(saved)}
     else{await saveSettings(false)}  // First run: move browser-stored preferences to the host once.
-    showSettings()}catch(e){console.warn('[Lasso] settings',e)}
+    showSettings()}catch(e){console.warn('[CutterMk] settings',e)}
 }
 async function saveSettings(announce=true){
-  try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{}
+  try{localStorage.setItem('cuttermk-settings',JSON.stringify(settings))}catch{}
   const r=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)});
   if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings=fromHost(saved);
   if(announce){showSettings();notify('Preferences saved')}
@@ -273,10 +273,10 @@ document.addEventListener('keydown',event=>{
   else if(event.ctrlKey&&event.shiftKey&&key==='p'){event.preventDefault();$('#projectSave').click()}
   else if(!event.ctrlKey&&!event.altKey&&!event.metaKey&&!document.querySelector('dialog[open]')&&toolKeys[key]&&document.activeElement?.tagName!=='SELECT'){event.preventDefault();toolKeys[key].click()}
 });
-const lifecycleText={tab:'stops when this tab closes',stay:'stays in the tray (--stay); Exit in the tray menu',tray:'stays in the tray (preference); Exit in the tray menu',env:'keeps running (LASSO_AUTO_STOP=0)'};
+const lifecycleText={tab:'stops when this tab closes',stay:'stays in the tray (--stay); Exit in the tray menu',tray:'stays in the tray (preference); Exit in the tray menu',env:'keeps running (CUTTERMK_AUTO_STOP=0)'};
 async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none',life='unknown';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';if(d.version)$('.side-footer-version').textContent='v'+d.version;ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';life=lifecycleText[d.lifecycle]||'unknown';
    const list=(d.hotkeys||[]).filter(h=>h.keys).map(h=>h.keys+' '+h.action);keys=list.length?list.join(', '):'none registered';const help=$('#globalHotkeys');if(help)help.textContent=keys}}catch{}
- $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nLasso session: '+life+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
+ $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nCutterMk session: '+life+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
 // Hotkey captures happen while the browser is in the background; poll for them.
 let lastEvent=null,eventsBusy=false;
 async function openCapture(name,label){const r=await api('/api/library/'+encodeURIComponent(name));if(!r.ok)throw Error('Capture not found');await loadImage(await r.blob(),label||name,{autoSave:false});librarySelection=name}
@@ -286,15 +286,15 @@ async function pollEvents(){
     if(lastEvent===null){lastEvent=d.latest||0;return}
     const captures=(d.events||[]).filter(e=>e.type==='capture');lastEvent=Math.max(lastEvent,d.latest||0);
     if(captures.length){const latest=captures.at(-1);await openCapture(latest.name,'Hotkey capture');await refreshLibrary();notify('Hotkey capture opened · already copied to the clipboard and saved')}
-  }catch(e){console.warn('[Lasso] events',e)}finally{eventsBusy=false}
+  }catch(e){console.warn('[CutterMk] events',e)}finally{eventsBusy=false}
 }
 setInterval(pollEvents,1500);document.addEventListener('visibilitychange',pollEvents);window.addEventListener('focus',pollEvents);
-async function openFromHash(){const m=location.hash.match(/^#open=((?:Lasso|SnipHero)-[A-Za-z0-9_.-]+\.png)$/);if(!m)return;history.replaceState(null,'',location.pathname);try{await openCapture(m[1],'Hotkey capture')}catch(e){fail(e)}}
+async function openFromHash(){const m=location.hash.match(/^#open=((?:CutterMk|Lasso|SnipHero)-[A-Za-z0-9_.-]+\.png)$/);if(!m)return;history.replaceState(null,'',location.pathname);try{await openCapture(m[1],'Hotkey capture')}catch(e){fail(e)}}
 window.addEventListener('hashchange',openFromHash);
 // The studio tab owns the local server (and its tray icon and hotkeys): a heartbeat every 5 s and a
-// "leaving" beacon on pagehide. Lasso stops about 5 s after the last open studio tab goes; a reload
+// "leaving" beacon on pagehide. CutterMk stops about 5 s after the last open studio tab goes; a reload
 // heartbeats again well inside that. Each page load has its own id, so with two tabs open, closing one
-// keeps Lasso running.
+// keeps CutterMk running.
 let sessionEnded=false;
 const tabId=(globalThis.crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now().toString(36))).replace(/[^A-Za-z0-9-]/g,'').slice(0,64);
 function heartbeat(leaving=false){
@@ -314,12 +314,12 @@ window.addEventListener('pageshow',event=>{if(event.persisted)heartbeat()});
 document.addEventListener('visibilitychange',()=>heartbeat());
 function showSessionEnded(){
   const screen=document.createElement('div');screen.className='session-ended';screen.setAttribute('role','alert');
-  screen.innerHTML='<div><h1>Lasso has stopped</h1><p>The local server, tray icon and global hotkeys are off. Close this tab, or run Lasso.bat to start a new session.</p></div>';
-  document.body.append(screen);document.title='Lasso Studio (stopped)';
+  screen.innerHTML='<div><h1>CutterMk has stopped</h1><p>The local server, tray icon and global hotkeys are off. Close this tab, or run CutterMk.bat to start a new session.</p></div>';
+  document.body.append(screen);document.title='CutterMk Studio (stopped)';
 }
 $('#endSession').onclick=async()=>{
-  if(!confirm('End this Lasso session? The local server, tray icon and global hotkeys stop. Unsaved edits in this tab are lost.'))return;
-  try{const r=await api('/api/session/stop',{method:'POST',headers:{'Content-Type':'application/json','X-Lasso-Intent':'end-session'},body:'{}'});
+  if(!confirm('End this CutterMk session? The local server, tray icon and global hotkeys stop. Unsaved edits in this tab are lost.'))return;
+  try{const r=await api('/api/session/stop',{method:'POST',headers:{'Content-Type':'application/json','X-CutterMk-Intent':'end-session'},body:'{}'});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'Could not end the session')}
     sessionEnded=true;showSessionEnded()}catch(e){fail(e)}
 };

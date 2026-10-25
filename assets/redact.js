@@ -1,4 +1,4 @@
-/* Lasso smart redaction: finds sensitive text in OCR results and returns boxes to cover.
+/* CutterMk smart redaction: finds sensitive text in OCR results and returns boxes to cover.
    Input is OCR lines: [{text, words:[{text,x,y,w,h}]}] in image pixels. Runs fully offline. */
 (() => {
 'use strict';
@@ -53,5 +53,5 @@ function findText(lines,term,{pad=3}={}){
 }
 // Turns browser TextDetector results (line boxes only) into the OCR line shape.
 function fromTextDetector(results){return (results||[]).map(r=>{const b=r.boundingBox||{};return {text:r.rawValue||'',words:[{text:r.rawValue||'',x:b.x,y:b.y,w:b.width,h:b.height}]}})}
-window.LassoRedact={detect,findText,fromTextDetector,kinds:KINDS.map(k=>({kind:k.kind,label:k.label}))};
+window.CutterMkRedact={detect,findText,fromTextDetector,kinds:KINDS.map(k=>({kind:k.kind,label:k.label}))};
 })();

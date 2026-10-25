@@ -77,5 +77,5 @@ async function stitch(tiles,{autoOverlap=true,maxPixels=90000000}={}){
   }
   return {canvas,overlaps,width,height};
 }
-window.LassoStitch={stitch,_findOverlap:findOverlap};
+window.CutterMkStitch={stitch,_findOverlap:findOverlap};
 })();

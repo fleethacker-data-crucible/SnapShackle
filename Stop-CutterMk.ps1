@@ -1,26 +1,26 @@
 <#
 .SYNOPSIS
-  Stops every running Lasso on this computer: server, tray icon and global hotkeys.
+  Stops every running CutterMk on this computer: server, tray icon and global hotkeys.
 .DESCRIPTION
-  Lasso normally stops itself when its studio tab closes, from End session in the studio, or from
+  CutterMk normally stops itself when its studio tab closes, from End session in the studio, or from
   Exit in the tray menu. This is the fallback when none of those is at hand (a hidden console,
   a -Stay instance without its tray, an old build). It needs no PIDs: it reads the runtime files
-  Lasso writes to %LOCALAPPDATA%\Lasso\logs, then looks for any PowerShell running Start-Lasso.ps1.
+  CutterMk writes to %LOCALAPPDATA%\CutterMk\logs, then looks for any PowerShell running Start-CutterMk.ps1.
   Each one is asked to stop so it can remove its tray icon and release its hotkeys; one that does
   not answer within a few seconds is force-stopped. Stale runtime files are removed.
 .PARAMETER Quiet
   Print nothing unless something was stopped.
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File Stop-Lasso.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File Stop-CutterMk.ps1
 #>
 [CmdletBinding()]
 param([switch]$Quiet)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Lifecycle.ps1')
-$stopped = @(Stop-LassoProcesses (Get-LassoRuntimeDir $root))
+$stopped = @(Stop-CutterMkProcesses (Get-CutterMkRuntimeDir $root))
 if ($stopped.Count -gt 0) {
-    foreach ($id in $stopped) { Write-Host ('Stopped Lasso PID ' + $id + '.') -ForegroundColor Yellow }
+    foreach ($id in $stopped) { Write-Host ('Stopped CutterMk PID ' + $id + '.') -ForegroundColor Yellow }
 } elseif (-not $Quiet) {
-    Write-Host 'No Lasso is running.' -ForegroundColor DarkGray
+    Write-Host 'No CutterMk is running.' -ForegroundColor DarkGray
 }
