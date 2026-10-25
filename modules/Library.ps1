@@ -68,7 +68,7 @@ function Get-LassoCaptureList([string]$Library, [string]$Query, [string]$Pattern
 # Studio preferences live in a file, not only in browser storage: the browser keys storage by
 # origin, and the origin includes the port, so a port fallback would otherwise reset them.
 # stayInTray: keep the tray icon and hotkeys after the studio tab closes (like -Stay; Exit is in the tray menu).
-$script:LassoSettingDefaults = [ordered]@{ namePrefix = 'Lasso'; autoLibrary = $false; recordFps = 6; stayInTray = $false }
+$script:LassoSettingDefaults = [ordered]@{ namePrefix = 'Lasso'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark' }
 function Get-LassoSettings([string]$Path) {
     $settings = [ordered]@{}
     foreach ($key in $script:LassoSettingDefaults.Keys) { $settings[$key] = $script:LassoSettingDefaults[$key] }
@@ -97,6 +97,10 @@ function ConvertTo-LassoSettings($Value) {
     if ($names -contains 'stayInTray') { $clean.stayInTray = ($Value.stayInTray -eq $true) }
     if ($names -contains 'recordFps') {
         $fps = 0; if ([int]::TryParse([string]$Value.recordFps, [ref]$fps)) { $clean.recordFps = [Math]::Max(2, [Math]::Min(12, $fps)) }
+    }
+    if ($names -contains 'theme') {
+        $theme = ([string]$Value.theme).ToLowerInvariant()
+        if ($theme -in @('dark', 'light', 'system')) { $clean.theme = $theme }
     }
     return $clean
 }

@@ -6,7 +6,7 @@ Lasso was previously called **SnipHero**. See [the roadmap](https://claude.ai/ar
 
 **Status:** An expanding prototype with a tested browser editor; **not production-hardened or feature-complete**. A genuine Windows desktop run and security review are required before use with sensitive work data.
 
-![Studio smoke-test preview](docs/studio-preview.png)
+![Lasso Studio, dark theme](docs/studio-preview.png)
 
 ## Run on Windows (Nautilus-friendly launch pattern)
 
@@ -48,6 +48,15 @@ Lasso.bat --replace
 `-NoBrowser` keeps the host running and prints its URL (it then stops once a studio tab that connected has closed; add `--stay` to keep it). `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts Lasso separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
 
 Captures live under `%LOCALAPPDATA%\Lasso\Captures`. On first start, Lasso **moves** any SnipHero captures from `%LOCALAPPDATA%\SnipHero\Captures` into it (files are never copied, deleted or overwritten; a name that already exists stays in the old folder). Old `SnipHero-*.png` names and `.sniphero.json` projects keep working. Browser settings are stored locally (`localStorage`). Screenshot bytes and OCR data are not transmitted off the computer by Lasso. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
+
+## One look with ARC (v0.11)
+
+- The studio now uses **ARC's design system**: the same colour tokens, Inter and Cascadia type, radius and shadow scale, button styles, sidebar and top-bar layout, and **Lucide icons** (1.54.0, the version ARC uses, bundled offline in `assets/icons.js`).
+- **Light and dark themes** like ARC: dark by default, a sun/moon button in the top bar, and **Workflows → Settings → Theme** offers Dark, Light or Match Windows. The choice is saved by the host.
+- **Single-key tool shortcuts** shown beside each tool: `V` select, `A` arrow, `R` rectangle, `E` ellipse, `L` line, `P` pen, `H` highlight, `T` text, `N` steps, `C` crop, `X` redact, `Q` pixelate, `B` blur. They are ignored while you type in a field.
+- The native selection overlay and the tray icon use the same violet and sky accents.
+
+![Lasso Studio, light theme](docs/studio-preview-light.png)
 
 ## Smart redaction and searchable library (v0.10)
 
