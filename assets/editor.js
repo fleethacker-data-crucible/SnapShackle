@@ -113,6 +113,11 @@ class LassoEditor {
     });
     this.canvas.addEventListener('pointerup',()=>{
       const d=this.drag;if(!d)return;
+      if(d.kind==='draw'&&d.object.type==='crop'){
+        const b=this.bounds(d.object);this.drag=null;this.render();
+        if(b.w>4&&b.h>4)this.crop(b.x,b.y,b.w,b.h).then(()=>this.onCrop?.(this)).catch(e=>this.onCrop?.(this,e));
+        return;
+      }
       if(d.kind==='draw'){
         if(distance(d.start,{x:d.object.x2,y:d.object.y2})>2||d.object.points.length>2){this.objects.push(d.object);this.selected=this.objects.length-1;this.saveHistory(d.before)}
       }else if(JSON.stringify(d.original)!==JSON.stringify(this.objects[this.selected]))this.saveHistory(d.before);
@@ -121,10 +126,26 @@ class LassoEditor {
     this.canvas.addEventListener('pointercancel',()=>{if(this.drag){if(this.drag.kind!=='draw')this.objects[this.selected]=this.drag.original;this.drag=null;this.render()}});
   }
   changeSelected(mutator){if(this.selected<0)return;const before=this.state();mutator(this.objects[this.selected]);this.saveHistory(before);this.render()}
+  // Adds several objects as one undoable step (used by smart redaction).
+  addObjects(list){if(!list?.length)return 0;const before=this.state();for(const o of list)this.objects.push(o);this.selected=-1;this.saveHistory(before);this.render();return list.length}
   deleteSelected(){if(this.selected<0)return;let before=this.state();this.objects.splice(this.selected,1);this.selected=-1;this.saveHistory(before);this.render()}
   duplicateSelected(){if(this.selected<0)return;let before=this.state(),o=clone(this.objects[this.selected]);this.translate(o,22,22);this.objects.push(o);this.selected=this.objects.length-1;this.saveHistory(before);this.render()}
   layerSelected(delta){let i=this.selected,j=i+delta;if(i<0||j<0||j>=this.objects.length)return;let before=this.state();[this.objects[i],this.objects[j]]=[this.objects[j],this.objects[i]];this.selected=j;this.saveHistory(before);this.render()}
-  async crop(x,y,w,h){x=Math.floor(x);y=Math.floor(y);w=Math.floor(w);h=Math.floor(h);if(w<1||h<1||w*h>100000000)throw Error('Invalid crop dimensions');const old=this.state(),image=await this.export();const bmp=await createImageBitmap(image),off=document.createElement('canvas');off.width=w;off.height=h;off.getContext('2d').drawImage(bmp,-x,-y);const src=off.toDataURL('image/png');const loaded=await this._image(src);this._img=loaded;this.background=src;this.canvas.width=w;this.canvas.height=h;this.objects=[];this.selected=-1;this.saveHistory(old);this.render()}
+  // Crops the background only and moves annotations with it, so they stay editable.
+  async crop(x,y,w,h){
+    x=Math.round(x);y=Math.round(y);w=Math.round(w);h=Math.round(h);
+    const x0=clamp(x,0,this.canvas.width),y0=clamp(y,0,this.canvas.height);
+    w=Math.min(x+w,this.canvas.width)-x0;h=Math.min(y+h,this.canvas.height)-y0;
+    if(w<2||h<2||w*h>100000000)throw Error('Invalid crop dimensions');
+    const old=this.state(),off=document.createElement('canvas');off.width=w;off.height=h;
+    const ctx=off.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);if(this._img)ctx.drawImage(this._img,-x0,-y0);
+    const blob=await new Promise((resolve,reject)=>off.toBlob(b=>b?resolve(b):reject(Error('Crop failed')),'image/png'));
+    const url=URL.createObjectURL(blob);let image;
+    try{image=await this._image(url)}catch(e){URL.revokeObjectURL(url);throw e}
+    this._blobUrls.add(url);this._img=image;this.background=url;this.canvas.width=w;this.canvas.height=h;
+    for(const o of this.objects)this.translate(o,-x0,-y0);
+    this.selected=-1;this.saveHistory(old);this.render();
+  }
   render(clean=false){
     const c=this.ctx,W=this.canvas.width,H=this.canvas.height;c.save();c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H);c.fillStyle='#fff';c.fillRect(0,0,W,H);
     if(this._img)c.drawImage(this._img,0,0,W,H);
@@ -149,6 +170,9 @@ class LassoEditor {
       case 'text':c.font=`700 ${o.font||26}px Segoe UI, sans-serif`;c.fillText(o.text||'',o.x,o.y);break;
       case 'step':c.beginPath();c.arc(o.x,o.y,21,0,Math.PI*2);c.fill();c.strokeStyle='white';c.lineWidth=2;c.stroke();c.fillStyle='white';c.textAlign='center';c.textBaseline='middle';c.font='bold 22px Segoe UI';c.fillText(o.text||'1',o.x,o.y);break;
       case 'redact':c.fillStyle='#0b0b0d';c.fillRect(b.x,b.y,b.w,b.h);break;
+      case 'crop':{const W=this.canvas.width,H=this.canvas.height;c.fillStyle='rgba(8,10,16,.55)';
+        c.fillRect(0,0,W,b.y);c.fillRect(0,b.y+b.h,W,H-b.y-b.h);c.fillRect(0,b.y,b.x,b.h);c.fillRect(b.x+b.w,b.y,W-b.x-b.w,b.h);
+        c.setLineDash([8,6]);c.strokeStyle='#fff';c.lineWidth=Math.max(1,W/900);c.strokeRect(b.x,b.y,b.w,b.h);c.setLineDash([]);break}
       case 'pixelate':case 'blur':this.paintEffect(c,b,o.type);break;
     }c.restore();
   }
