@@ -1,4 +1,4 @@
-/* Lasso icon set: Lucide 1.54.0 (the version ARC uses), bundled so the studio stays offline.
+/* CutterMk icon set: Lucide 1.54.0 (the version ARC uses), bundled so the studio stays offline.
  * Icons: https://lucide.dev  Source: https://github.com/lucide-icons/lucide/tree/1.54.0/icons
  *
  * ISC License
@@ -119,6 +119,6 @@ function hydrate(root = document) {
     el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon, Number(el.dataset.iconSize) || 16));
   }
 }
-window.LassoIcons = { icon, hydrate, names: Object.keys(PATHS) };
+window.CutterMkIcons = { icon, hydrate, names: Object.keys(PATHS) };
 if (document.readyState !== 'loading') hydrate(); else document.addEventListener('DOMContentLoaded', () => hydrate());
 })();
