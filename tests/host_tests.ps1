@@ -200,6 +200,10 @@ Test-Case 'Settings persist in a file and are sanitised' {
         $saved = Get-LassoSettings $path
         Assert-True ($saved.saved -and $saved.namePrefix -eq 'MyShots' -and $saved.recordFps -eq 12 -and $saved.autoLibrary) "not sanitised: $($saved | ConvertTo-Json -Compress)"
         Assert-True (-not $saved.Contains('evil')) 'unknown key stored'
+        $null = Set-LassoSettings $path @{ theme = 'neon' }
+        Assert-True ((Get-LassoSettings $path).theme -eq 'dark') 'invalid theme accepted'
+        $null = Set-LassoSettings $path @{ theme = 'System' }
+        Assert-True ((Get-LassoSettings $path).theme -eq 'system') 'theme not saved'
         $null = Set-LassoSettings $path @{ recordFps = 4 }
         $again = Get-LassoSettings $path
         Assert-True ($again.recordFps -eq 4 -and $again.namePrefix -eq 'MyShots') 'partial update lost other settings'
