@@ -129,7 +129,7 @@ namespace Lasso {
    snaps=list.ToArray();
    // Pre-darken once so painting only copies pixels.
    dim=new Bitmap(shot.Width,shot.Height,PixelFormat.Format32bppPArgb);
-   using(var g=Graphics.FromImage(dim)){g.DrawImageUnscaled(shot,0,0);using(var b=new SolidBrush(Color.FromArgb(110,8,10,16)))g.FillRectangle(b,0,0,dim.Width,dim.Height);}
+   using(var g=Graphics.FromImage(dim)){g.DrawImageUnscaled(shot,0,0);using(var b=new SolidBrush(Color.FromArgb(120,4,6,14)))g.FillRectangle(b,0,0,dim.Width,dim.Height);}
   }
   protected override void OnShown(EventArgs e){base.OnShown(e);Activate();Focus();cursor=PointToClient(Control.MousePosition);UpdateHover();Invalidate();}
   protected override void WndProc(ref Message m){
@@ -184,7 +184,7 @@ namespace Lasso {
    var sel=Current();
    if(!sel.IsEmpty){
     g.DrawImage(shot,sel,sel,GraphicsUnit.Pixel);
-    using(var pen=new Pen(Color.FromArgb(255,73,98),2)){g.DrawRectangle(pen,sel.X,sel.Y,sel.Width-1,sel.Height-1);}
+    using(var pen=new Pen(Color.FromArgb(139,125,255),2)){g.DrawRectangle(pen,sel.X,sel.Y,sel.Width-1,sel.Height-1);}
     string label=sel.Width+" \u00D7 "+sel.Height+(dragging?"":"  \u00B7  click to capture window");
     DrawTag(g,label,new Point(sel.X,Math.Max(0,sel.Y-26)));
    }
@@ -193,7 +193,7 @@ namespace Lasso {
   void DrawTag(Graphics g,string text,Point at){
    using(var font=new Font("Segoe UI",9f,FontStyle.Bold)){
     var size=g.MeasureString(text,font);var box=new RectangleF(at.X,at.Y,size.Width+12,size.Height+6);
-    using(var b=new SolidBrush(Color.FromArgb(230,16,19,27)))g.FillRectangle(b,box);
+    using(var b=new SolidBrush(Color.FromArgb(235,26,32,51)))g.FillRectangle(b,box);
     g.DrawString(text,font,Brushes.White,at.X+6,at.Y+3);
    }
   }
@@ -204,7 +204,7 @@ namespace Lasso {
    g.InterpolationMode=InterpolationMode.NearestNeighbor;g.PixelOffsetMode=PixelOffsetMode.Half;
    g.DrawImage(shot,img,src,GraphicsUnit.Pixel);
    g.InterpolationMode=InterpolationMode.Default;g.PixelOffsetMode=PixelOffsetMode.Default;
-   using(var pen=new Pen(Color.FromArgb(255,73,98),1)){g.DrawRectangle(pen,img.X+(LoupeCells/2)*LoupeZoom,img.Y+(LoupeCells/2)*LoupeZoom,LoupeZoom,LoupeZoom);g.DrawRectangle(pen,box.X,box.Y,box.Width-1,box.Height-1);}
+   using(var pen=new Pen(Color.FromArgb(139,125,255),1)){g.DrawRectangle(pen,img.X+(LoupeCells/2)*LoupeZoom,img.Y+(LoupeCells/2)*LoupeZoom,LoupeZoom,LoupeZoom);g.DrawRectangle(pen,box.X,box.Y,box.Width-1,box.Height-1);}
    string hex="-";
    if(cursor.X>=0&&cursor.Y>=0&&cursor.X<shot.Width&&cursor.Y<shot.Height){var c=shot.GetPixel(cursor.X,cursor.Y);hex="#"+c.R.ToString("X2")+c.G.ToString("X2")+c.B.ToString("X2");}
    using(var font=new Font("Segoe UI",8.5f)){
