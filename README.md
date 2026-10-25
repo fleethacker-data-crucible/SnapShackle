@@ -1,4 +1,9 @@
-<p align="center"><img src="assets/brand/emblem-light.png" width="280" alt="SnapShackle"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/emblem-dark.png">
+    <img src="assets/brand/emblem-light.png" width="280" alt="SnapShackle emblem: a brass snap shackle on a rope inside screenshot crop marks and a brass compass ring">
+  </picture>
+</p>
 
 # SnapShackle
 
