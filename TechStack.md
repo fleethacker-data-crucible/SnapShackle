@@ -43,7 +43,7 @@ Notes:
 - The beacon cannot set headers, so the server accepts the session token in the JSON body on that one route only — never in the query string, never logged.
 - A hidden PowerShell console counts: if the window is hidden or minimised, the user has no Ctrl+C.
 - To find what holds a DLL, use the Windows Restart Manager (`RmRegisterResources` + `RmGetList`); `Process.Modules` misses .NET-mapped assemblies.
-- Reference implementation: Halyard, formerly Cascade (`web/src/lib/api.ts` `startHeartbeat`; the host, process and start/stop scripts were named `Host/CascadeHost.cs`, `scripts/Cascade-Process.ps1`, `Start-Cascade.ps1` and `Stop-Cascade.ps1` before its rename).
+- Reference implementation: Halyard (`web/src/lib/api.ts` `startHeartbeat`, `Host/HalyardHost.cs`, `scripts/Halyard-Process.ps1`, `Stop-Halyard.ps1`, `Start-Halyard.ps1`).
 
 ## SnapShackle: how it applies
 
