@@ -202,6 +202,17 @@ function Invoke-SnapShackleRequest($Context) {
     if ($method -eq 'GET' -and $path -eq '/assets/styles.css') {
         Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $root 'assets/styles.css'))) 'text/css; charset=utf-8';return
     }
+    # Shared Fleet tokens (docs/UNIFIED-UI.md) and the in-app brand art: the emblem with its backdrop
+    # made transparent, one per theme, and the icon cut from its circle.
+    if ($method -eq 'GET' -and $path -eq '/assets/vendor/fleet/fleet.css') {
+        Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $root 'assets/vendor/fleet/fleet.css'))) 'text/css; charset=utf-8';return
+    }
+    if ($method -eq 'GET' -and $path -match '^/assets/ui/(emblem-dark|emblem-light|icon-256)\.png$') {
+        Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $root ('assets/ui/'+$Matches[1]+'.png')))) 'image/png';return
+    }
+    if ($method -eq 'GET' -and ($path -eq '/favicon.ico' -or $path -eq '/assets/ui/favicon.ico')) {
+        Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $root 'assets/ui/favicon.ico'))) 'image/x-icon';return
+    }
     if ($path -eq '/api/heartbeat' -and $method -eq 'POST') {
         # navigator.sendBeacon cannot set headers, so on this route alone the token may travel in the
         # JSON body as "session". Never in the query string; the body is never logged.
@@ -284,7 +295,10 @@ function Invoke-SnapShackleRequest($Context) {
         Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
     }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
-        Send-Json $Context @{items=@(Get-SnapShackleCaptureList $library $request.QueryString['q'] $CaptureNamePattern)};return
+        # The list comes back as one array object (return ,$array); @(...) around it would nest it as
+        # items:[[...]], which the studio rendered as a single broken card ("Invalid Date").
+        [object[]]$items = Get-SnapShackleCaptureList $library $request.QueryString['q'] $CaptureNamePattern
+        Send-Json $Context @{items=$items};return
     }
     if ($path -eq '/api/library' -and $method -eq 'POST') {
         $bytes=Read-Body $Context 25000000;Assert-Png $bytes
