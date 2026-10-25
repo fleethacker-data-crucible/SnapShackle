@@ -66,6 +66,7 @@ $script:LassoTrayScript = {
         # set per-monitor DPI awareness for this thread.
         . (Join-Path $Root 'modules/Native.ps1')
         . (Join-Path $Root 'modules/Library.ps1')
+        . (Join-Path $Root 'modules/Ocr.ps1')
         . (Join-Path $Root 'modules/Tray.ps1')
 
         $tray = [Windows.Forms.NotifyIcon]::new()
@@ -119,6 +120,8 @@ $script:LassoTrayScript = {
                 } finally { $image.Dispose(); $stream.Dispose() }
                 & $addEvent 'capture' @{ name = $name; source = $Action }
                 $tray.ShowBalloonTip(2500, 'Copied to clipboard', 'Saved to your Lasso library. Click to edit.', [Windows.Forms.ToolTipIcon]::None)
+                # Index the text in the image for library search (this thread, so the server never waits).
+                $null = Update-LassoOcrIndex $Library $name $png
             } catch {
                 $Shared.LastError = $_.Exception.Message
                 $tray.ShowBalloonTip(4000, 'Lasso could not capture', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Warning)

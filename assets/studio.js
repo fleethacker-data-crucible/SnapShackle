@@ -80,10 +80,12 @@ $('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose a
 async function getSharedScreen(){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia({video:{frameRate:settings.recordFps},audio:false})}
 async function videoFor(stream){let video=document.createElement('video');video.srcObject=stream;video.muted=true;await video.play();if(!video.videoWidth)await new Promise(r=>setTimeout(r,400));return video}
 $('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(await new Promise(resolve=>temp.toBlob(resolve,'image/png')),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
-const toolNames={select:'↖ Select',arrow:'↗ Arrow',rectangle:'▢ Rectangle',ellipse:'◯ Ellipse',line:'╱ Line',pen:'✎ Pen',highlight:'▰ Highlight',text:'T Text',step:'① Steps',redact:'■ Redact',pixelate:'▦ Pixelate',blur:'◍ Blur'};
+const toolNames={select:'↖ Select',arrow:'↗ Arrow',rectangle:'▢ Rectangle',ellipse:'◯ Ellipse',line:'╱ Line',pen:'✎ Pen',highlight:'▰ Highlight',text:'T Text',step:'① Steps',crop:'⌗ Crop',redact:'■ Redact',pixelate:'▦ Pixelate',blur:'◍ Blur'};
 for(let [tool,title] of Object.entries(toolNames)){let button=document.createElement('button');button.className='tool';let parts=title.split(' ');button.innerHTML='<span class="tool-symbol">'+parts.shift()+'</span><span>'+parts.join(' ')+'</span>';button.title=title;button.dataset.tool=tool;
   button.onclick=()=>{editor.tool=tool;for(let b of $('#tools').children)b.classList.toggle('active',b===button);notify('Tool: '+title)};$('#tools').append(button)}
 $('#tools').firstElementChild.click();
+// Drag-to-crop keeps annotations editable; afterwards the select tool comes back.
+editor.onCrop=(instance,error)=>{if(error)return fail(error);setFileName('Cropped image');fitZoom();$('#tools [data-tool="select"]').click();notify(`Cropped to ${canvas.width} × ${canvas.height} · annotations kept · Ctrl+Z to undo`)};
 $('#color').oninput=e=>{editor.color=e.target.value;$('#colorHex').textContent=e.target.value.toUpperCase()};
 $('#width').oninput=e=>{editor.width=+e.target.value;$('#widthLabel').textContent=editor.width+' px'};
 $('#font').oninput=e=>{editor.font=+e.target.value;$('#fontLabel').textContent=editor.font+' px'};
@@ -91,7 +93,7 @@ $('#undo').onclick=()=>editor.undo().catch(fail);$('#redo').onclick=()=>editor.r
 $('#deleteObject').onclick=()=>editor.deleteSelected();$('#duplicate').onclick=()=>editor.duplicateSelected();
 $('#forward').onclick=()=>editor.layerSelected(1);$('#backward').onclick=()=>editor.layerSelected(-1);
 $('#editText').onclick=()=>{const selected=editor.objects[editor.selected];if(!selected||!['text','step'].includes(selected.type))return notify('Select a text or step annotation first');const s=prompt('Edit annotation text',selected.text);if(s!==null)editor.changeSelected(o=>o.text=s)};
-$('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in pixels',`0, 0, ${canvas.width}, ${canvas.height}`);if(!entry)return;const parts=entry.split(',').map(Number);if(parts.length!==4||parts.some(v=>!Number.isFinite(v)))return notify('Invalid crop coordinates');editor.crop(...parts).then(()=>{setFileName('Cropped image');fitZoom();notify('Image cropped')}).catch(fail)};
+$('#crop').onclick=()=>{const entry=prompt('Crop image: x, y, width, height in pixels',`0, 0, ${canvas.width}, ${canvas.height}`);if(!entry)return;const parts=entry.split(',').map(Number);if(parts.length!==4||parts.some(v=>!Number.isFinite(v)))return notify('Invalid crop coordinates');editor.crop(...parts).then(()=>{setFileName('Cropped image');fitZoom();notify('Image cropped · annotations kept')}).catch(fail)};
 $('#zoom').oninput=e=>setZoom(e.target.value);$('#zoomFit').onclick=fitZoom;
 $('#clear').onclick=()=>loadImage('data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="white"/></svg>'),'Blank image').catch(fail);
 $('#import').onclick=()=>$('#file').click();$('#file').onchange=async e=>{try{let f=e.target.files?.[0];if(f){if(!f.type.startsWith('image/'))throw Error('Choose an image file');await loadImage(f,f.name)}}catch(ex){fail(ex)}finally{e.target.value=''}};
@@ -143,7 +145,7 @@ async function refreshLibrary(){
     },{root,rootMargin:'140px'});
   }
   for(let item of items.slice(0,90)){let button=document.createElement('button');button.className='capture-card'+(item.name===librarySelection?' active':'');button.dataset.capture=item.name;
-    let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString();text.append(name,meta);button.append(preview,text);root.append(button);
+    let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.textMatch?'Text in image matches · ':'')+((item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString());text.append(name,meta);button.append(preview,text);root.append(button);
     button.onclick=async()=>{try{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(blob,item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}catch(ex){fail(ex)}};
     // Hidden cards incur no image decode or server work until scrolled into view.
     if(thumbnailObserver)thumbnailObserver.observe(button);
@@ -203,16 +205,54 @@ $('#scrollAuto').onclick=async()=>{
 };
 $('#scrollAdd').onclick=async()=>{try{if(stitchTiles.length>=35)throw Error('Maximum 35 tiles');const blob=await editor.export();stitchTiles.push(await createImageBitmap(blob));$('#stitchCount').textContent=stitchTiles.length+' tiles queued';notify('Tile '+stitchTiles.length+' added — scroll the target and capture again')}catch(e){fail(e)}};
 $('#scrollFinish').onclick=async()=>{try{let result=await LassoStitch.stitch(stitchTiles,{autoOverlap:$('#alignOverlap').checked});for(let im of stitchTiles)im.close?.();stitchTiles=[];$('#stitchCount').textContent='0 tiles queued';await loadImage(result.canvas.toDataURL('image/png'),'Long screenshot');notify('Stitched '+result.overlaps.length+' tiles · overlap removed '+result.overlaps.reduce((a,b)=>a+b,0)+' px')}catch(e){fail(e)}};
-$('#ocr').onclick=async()=>{try{
-    const blob=await editor.export(),response=await api('/api/ocr',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
-    if(response.ok){let result=await response.json();$('#ocrText').value=result.text||'';notify('Windows native OCR complete');return}
-    const nativeFailure=(await response.json().catch(()=>({}))).error||'Windows OCR failed';
-    if(typeof TextDetector==='undefined')throw Error(nativeFailure+'; browser OCR is also unavailable');
-    let image=await createImageBitmap(blob);const lines=await new TextDetector().detect(image);$('#ocrText').value=lines.map(x=>x.rawValue).join('\n');notify('Browser OCR complete');
-  }catch(e){fail(e)}};
+// OCR the current image (annotations included). Native Windows OCR returns word boxes;
+// the browser fallback returns line boxes only.
+async function recognize(){
+  const blob=await editor.export(),response=await api('/api/ocr',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
+  if(response.ok){const r=await response.json();return {text:r.text||'',lines:r.lines||[],engine:'Windows native OCR'}}
+  const nativeFailure=(await response.json().catch(()=>({}))).error||'Windows OCR failed';
+  if(typeof TextDetector==='undefined')throw Error(nativeFailure+'; browser OCR is also unavailable');
+  const found=await new TextDetector().detect(await createImageBitmap(blob));
+  return {text:found.map(x=>x.rawValue).join('\n'),lines:LassoRedact.fromTextDetector(found),engine:'Browser OCR'};
+}
+$('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
+// Smart redaction: OCR, detect, let the person untick false positives, then cover with solid boxes.
+let redactFindings=[];
+function clampBox(b){return {x:Math.max(0,b.x),y:Math.max(0,b.y),x2:Math.min(canvas.width,b.x2),y2:Math.min(canvas.height,b.y2)}}
+function applyRedactions(boxes){return editor.addObjects(boxes.map(b=>({type:'redact',...clampBox(b)})))}
+function renderFindings(){
+  const root=$('#redactFindings');root.replaceChildren();
+  if(!redactFindings.length){root.textContent='No sensitive text found. OCR can miss small or stylised text.';$('#redactApply').hidden=true;return}
+  redactFindings.forEach((f,i)=>{const row=document.createElement('label');row.className='redact-row';const box=document.createElement('input');box.type='checkbox';box.checked=true;box.dataset.index=i;
+    const kind=document.createElement('b');kind.textContent=f.label;const text=document.createElement('span');text.textContent=f.text.length>36?f.text.slice(0,33)+'…':f.text;row.append(box,kind,text);root.append(row)});
+  $('#redactApply').hidden=false;$('#redactApply').textContent=`Redact ${redactFindings.length} checked`;
+}
+$('#redactFind').onclick=async()=>{try{notify('Reading text…');const r=await recognize();redactFindings=LassoRedact.detect(r.lines);renderFindings();
+  notify(redactFindings.length?`Found ${redactFindings.length} item(s) to redact (${r.engine}). Untick any you want to keep.`:`No sensitive text found (${r.engine})`)}catch(e){fail(e)}};
+$('#redactFindings').onchange=()=>{const n=[...$('#redactFindings').querySelectorAll('input:checked')].length;$('#redactApply').textContent=`Redact ${n} checked`};
+$('#redactApply').onclick=()=>{const picked=[...$('#redactFindings').querySelectorAll('input:checked')].map(x=>redactFindings[+x.dataset.index]);
+  const n=applyRedactions(picked.map(f=>f.box));redactFindings=[];$('#redactFindings').replaceChildren();$('#redactApply').hidden=true;
+  notify(n?`Added ${n} solid redaction box(es). Undo removes them in one step.`:'Nothing selected')};
+$('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.trim();if(!term)return notify('Type a word or phrase to redact');
+  notify('Reading text…');const r=await recognize();const hits=LassoRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
+  notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{};notify('Preferences saved')};
-$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps}
+// Settings are kept by the host (a port change would give the browser a new, empty storage origin).
+async function loadSettings(){
+  try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
+    if(saved.saved){settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps}}
+    else{await saveSettings(false)}  // First run: move browser-stored preferences to the host once.
+    showSettings()}catch(e){console.warn('[Lasso] settings',e)}
+}
+async function saveSettings(announce=true){
+  try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{}
+  const r=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)});
+  if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps};
+  if(announce){showSettings();notify('Preferences saved')}
+}
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));saveSettings().catch(fail)};
+showSettings();
 document.addEventListener('keydown',event=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
   const key=event.key.toLowerCase();if(event.ctrlKey&&key==='z'){event.preventDefault();editor.undo().catch(fail)}
@@ -238,5 +278,5 @@ async function pollEvents(){
 setInterval(pollEvents,1500);document.addEventListener('visibilitychange',pollEvents);window.addEventListener('focus',pollEvents);
 async function openFromHash(){const m=location.hash.match(/^#open=((?:Lasso|SnipHero)-[A-Za-z0-9_.-]+\.png)$/);if(!m)return;history.replaceState(null,'',location.pathname);try{await openCapture(m[1],'Hotkey capture')}catch(e){fail(e)}}
 window.addEventListener('hashchange',openFromHash);
-refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();
+refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();loadSettings();
 })();
