@@ -1,21 +1,39 @@
 <#
  Lasso local server. Windows PowerShell 5.1 recommended for native OCR.
  No elevated privileges, remote listening, installers, or online dependencies.
+ The studio tab owns the server: closing it stops Lasso, its tray icon and hotkeys.
+ -Stay (or --stay) keeps Lasso in the tray with its hotkeys after the tab closes; Exit is in the tray menu.
+ -Replace (or --replace) stops a running Lasso without asking. LASSO_AUTO_STOP=0 turns auto-stop off.
 #>
-[CmdletBinding()]
+[CmdletBinding(PositionalBinding=$false)]
 param(
     [ValidateRange(1024,65535)][int]$Port=8765,
     [switch]$NoBrowser,
     [ValidateRange(1,500)][int]$PortScanCount=100,
     [switch]$Diagnostics,
     # Skip global hotkeys and the tray icon (tests, or when another tool owns the keys).
-    [switch]$NoTray
+    [switch]$NoTray,
+    # Stay in the tray with hotkeys after the studio tab closes (Exit in the tray menu stops it).
+    [switch]$Stay,
+    # If Lasso is already running, stop it and start fresh without asking.
+    [switch]$Replace,
+    # Tests only: skip the single-instance check (a headless -NoTray test host next to a running Lasso).
+    [switch]$AllowSecondInstance,
+    # Launcher-style options: --stay, --replace, --no-browser, --no-tray.
+    [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest
 )
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
     throw 'Lasso requires a Windows desktop session.'
 }
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $root 'modules/Lifecycle.ps1')
+$launch = Read-LassoLaunchOptions $Rest
+if ($launch.Stay) { $Stay = $true }
+if ($launch.Replace) { $Replace = $true }
+if ($launch.NoBrowser) { $NoBrowser = $true }
+if ($launch.NoTray) { $NoTray = $true }
+foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option ' + $unknown) }
 . (Join-Path $root 'modules/LocalHttp.ps1')
 . (Join-Path $root 'modules/Native.ps1')
 . (Join-Path $root 'modules/Ocr.ps1')
@@ -42,6 +60,22 @@ if ($Diagnostics) {
     finally { $testServer.Dispose() }
     Write-Host 'Diagnostics passed. No long-running server was started.' -ForegroundColor Green
     return
+}
+# One instance: a second Lasso would fight the first for the hotkeys and the tray.
+$runtimeDir = Get-LassoRuntimeDir $root
+$running = @(if (-not $AllowSecondInstance) { Get-LassoProcesses $runtimeDir })
+if ($running.Count -gt 0) {
+    $where = ($running | ForEach-Object { if ($_.Url) { $_.Url + ' (PID ' + $_.Pid + ')' } else { 'PID ' + $_.Pid } }) -join ', '
+    Write-Host ('Lasso is already running: ' + $where) -ForegroundColor Yellow
+    $answer = if ($Replace) { 'y' } else { Read-Host 'Stop it and start fresh? [Y/n]' }
+    if ($answer -eq '' -or $answer -match '^[Yy]') {
+        foreach ($stoppedPid in Stop-LassoProcesses $runtimeDir) { Write-Host ('  stopped PID ' + $stoppedPid) -ForegroundColor DarkGray }
+    } else {
+        Write-Host 'Leaving the running Lasso alone. Use End session in its studio, Exit in its tray menu, or Stop-Lasso.ps1.' -ForegroundColor DarkGray
+        $open = @($running | Where-Object { $_.Url } | Select-Object -First 1)
+        if ($open.Count -gt 0 -and -not $NoBrowser) { try { Start-Process $open[0].Url } catch {} }
+        exit 0
+    }
 }
 $sessionToken = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
 # Bind directly to 127.0.0.1; no HttpListener URL ACL or admin permissions.
@@ -161,9 +195,26 @@ function Invoke-LassoRequest($Context) {
     if ($method -eq 'GET' -and $path -eq '/assets/styles.css') {
         Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $root 'assets/styles.css'))) 'text/css; charset=utf-8';return
     }
+    if ($path -eq '/api/heartbeat' -and $method -eq 'POST') {
+        # navigator.sendBeacon cannot set headers, so on this route alone the token may travel in the
+        # JSON body as "session". Never in the query string; the body is never logged.
+        $beat=ConvertFrom-LassoHeartbeat ([Text.Encoding]::UTF8.GetString((Read-Body $Context 1024)))
+        $headerOk=Test-LassoSecretEquals ([string]$request.Headers['X-Lasso-Token']) $sessionToken
+        if ($null -eq $beat -or -not ($headerOk -or (Test-LassoSecretEquals $beat.Session $sessionToken))) { Send-Json $Context @{error='Invalid session'} 403;return }
+        Register-LassoPresence $presence $beat.Tab $beat.Leaving ([datetime]::UtcNow) $beat.Hidden
+        Send-Json $Context @{autoStop=(Test-LassoAutoStop);timeoutSeconds=$presence.HeartbeatTimeout};return
+    }
     if ($request.Headers['X-Lasso-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
+    if ($path -eq '/api/session/stop' -and $method -eq 'POST') {
+        # End session in the studio. The intent header keeps a stray authenticated request from stopping Lasso.
+        if ($request.Headers['X-Lasso-Intent'] -ne 'end-session') { Send-Json $Context @{error='Missing intent'} 400;return }
+        if ($shared.Busy) { Send-Json $Context @{error='A capture is still being saved; try again in a moment'} 409;return }
+        Send-Json $Context @{stopped=$true}
+        $script:stopReason='End session in the studio.'
+        $shared.Quit=$true;return
+    }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;ocr=(Test-LassoOcr);version=$LassoVersion;offline=$true;dpi=$script:LassoDpiMode;hotkeys=@($shared.Hotkeys)};return
+        Send-Json $Context @{capture=$true;ocr=(Test-LassoOcr);version=$LassoVersion;offline=$true;dpi=$script:LassoDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-LassoLifecycleMode)};return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
         Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
@@ -198,7 +249,9 @@ function Invoke-LassoRequest($Context) {
         if ($method -eq 'GET') { Send-Json $Context (Get-LassoSettings $settingsPath);return }
         if ($method -eq 'PUT') {
             $changes=[Text.Encoding]::UTF8.GetString((Read-Body $Context 16384)) | ConvertFrom-Json
-            Send-Json $Context (Set-LassoSettings $settingsPath $changes);return
+            $saved=Set-LassoSettings $settingsPath $changes
+            $script:stayInTraySetting=[bool]$saved.stayInTray
+            Send-Json $Context $saved;return
         }
     }
     if ($path -eq '/api/events' -and $method -eq 'GET') {
@@ -266,9 +319,41 @@ function Invoke-LassoRequest($Context) {
 $base="http://127.0.0.1:$Port/"
 $shared=[hashtable]::Synchronized(@{
     Events=[Collections.ArrayList]::Synchronized([Collections.ArrayList]::new()); NextId=0
-    Quit=$false; Busy=$false; Hotkeys=@(); BaseUrl=$base; Server=$server; LastName=$null; TrayReady=$false
+    Quit=$false; Busy=$false; Hotkeys=@(); BaseUrl=$base; Server=$server; LastName=$null; TrayReady=$false; TrayIcon=$null
+    TrayStopped=$false; StopReason=$null; Stay=$false
 })
+# Lifecycle: auto-stop is on unless -Stay, LASSO_AUTO_STOP=0, or the "stay in the tray" preference
+# (which needs a running tray, so there is always a visible Exit).
+$autoStopEnv=Test-LassoAutoStopEnv $env:LASSO_AUTO_STOP
+$script:stayInTraySetting=[bool](Get-LassoSettings $settingsPath).stayInTray
+function Test-LassoAutoStop {
+    if ($Stay -or -not $autoStopEnv) { return $false }
+    if ($script:stayInTraySetting -and $shared.TrayReady) { return $false }
+    return $true
+}
+function Get-LassoLifecycleMode {
+    if ($Stay) { return 'stay' }
+    if (-not $autoStopEnv) { return 'env' }
+    if ($script:stayInTraySetting -and $shared.TrayReady) { return 'tray' }
+    return 'tab'
+}
+# Without a browser to open, nobody is expected to connect, so there is no first-contact limit.
+$firstContactBy=if ($NoBrowser) { $null } else { [datetime]::UtcNow.AddSeconds($script:LassoFirstContactTimeout) }
+$presence=New-LassoPresence $firstContactBy
+$script:stopReason=$null
+if ($Stay -and $NoTray) {
+    Write-Warning '-Stay keeps Lasso in the tray so it can always be exited from there; -NoTray is ignored.'
+    $NoTray=$false
+}
+$shared.Stay=[bool]$Stay
 Write-Host "Lasso $LassoVersion local server: $base" -ForegroundColor Red
+$runtimeFile=$null
+try { $runtimeFile=Write-LassoRuntimeFile $runtimeDir $PID $Port $base ([bool]$Stay) }
+catch { Write-Warning ('Could not write the runtime file in ' + $runtimeDir + ': ' + $_.Exception.Message) }
+# Stop-Lasso.ps1 and the launcher signal this event, so Lasso can remove its tray icon and hotkeys itself.
+$stopEvent=$null
+try { $stopEvent=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,(Get-LassoStopEventName $PID)) }
+catch { $stopEvent=$null }
 $tray=$null
 if (-not $NoTray) {
     try {
@@ -281,15 +366,42 @@ if (-not $NoTray) {
         }
     } catch { Write-Warning ('Hotkeys and tray unavailable: ' + $_.Exception.Message) }
 }
-Write-Host 'Press Ctrl+C in this console (or Quit in the tray menu) to stop.'
+if ($Stay -and -not $shared.TrayReady) {
+    # Staying without a tray would leave a hidden process with no way out: the tab owns Lasso after all.
+    Write-Warning '-Stay needs the tray icon (it holds Exit), which is unavailable; closing the studio tab will stop Lasso.'
+    $Stay=$false; $shared.Stay=$false
+}
+switch (Get-LassoLifecycleMode) {
+    'stay' { Write-Host 'Staying in the tray after the studio tab closes (-Stay). Exit in the tray menu, End session in the studio, Stop-Lasso.ps1 or Ctrl+C stops it.' }
+    'env' { Write-Host 'LASSO_AUTO_STOP=0: Lasso keeps running after the studio tab closes. End session, Exit in the tray menu, Stop-Lasso.ps1 or Ctrl+C stops it.' }
+    'tray' { Write-Host 'Preference "stay in the tray" is on: Lasso keeps its hotkeys after the studio tab closes. Exit in the tray menu stops it.' }
+    default { Write-Host 'Closing the studio tab stops Lasso, its tray icon and hotkeys (start with -Stay to keep them). Ctrl+C, End session or Exit in the tray menu also stop it.' }
+}
 if (-not $NoBrowser) {
     try { Start-Process $base }
-    catch { Write-Warning ('Browser did not open automatically: ' + $_.Exception.Message + '. Open ' + $base + ' manually.') }
+    catch {
+        Write-Warning ('Browser did not open automatically: ' + $_.Exception.Message + '. Open ' + $base + ' manually.')
+        $presence.FirstContactBy=$null  # opening it by hand may take a while
+    }
 }
 try {
     while (-not $shared.Quit) {
         $context=$null
         try {
+            if ($null -ne $stopEvent -and $stopEvent.WaitOne(0)) { $script:stopReason='Stop-Lasso.ps1 or a new launch asked Lasso to stop.'; break }
+            # A gap since the last pass (the PC slept, or a long region selection held this thread) means the
+            # tabs could not be heard: they get a fresh grace period.
+            $gap=Step-LassoPresenceClock $presence ([datetime]::UtcNow)
+            # Wait at most half a second for a client, so the checks run (and Ctrl+C is handled) while idle.
+            if (-not $server.Listener.Server.Poll(500000,[Net.Sockets.SelectMode]::SelectRead)) {
+                # Only when idle: queued heartbeats are always read first. Requests run on this thread, so a
+                # studio capture or save is never cut off; a hotkey capture on the tray thread sets Busy.
+                if (-not $gap) {
+                    $reason=Get-LassoStopReason $presence ([datetime]::UtcNow) ([bool]$shared.Busy) (Test-LassoAutoStop)
+                    if ($reason) { $script:stopReason=$reason + ' (Start with -Stay or set LASSO_AUTO_STOP=0 to keep it running.)'; break }
+                }
+                continue
+            }
             $context=$server.Accept()
             Invoke-LassoRequest $context
         } catch [System.IO.InvalidDataException] {
@@ -305,6 +417,16 @@ try {
         }
     }
 } finally {
-    Stop-LassoTray $tray $shared
-    $server.Dispose()
+    if (-not $script:stopReason -and $shared.StopReason) { $script:stopReason=$shared.StopReason }
+    # A hotkey capture may still be saving to the library: let it finish (bounded) before the tray goes.
+    for ($i=0; $i -lt 300 -and $shared.Busy; $i++) { Start-Sleep -Milliseconds 100 }
+    $shared.Quit=$true
+    $trayClean=Stop-LassoTray $tray $shared
+    try { $server.Dispose() } catch {}
+    Remove-LassoRuntimeFile $runtimeFile
+    if ($null -ne $stopEvent) { $stopEvent.Dispose() }
+    if ($script:stopReason) { Write-Host $script:stopReason -ForegroundColor DarkGray }
+    Write-Host 'Lasso stopped.'
+    # A tray thread that did not finish would keep this process alive; it has nothing left to save.
+    if (-not $trayClean) { [Environment]::Exit(0) }
 }

@@ -33,9 +33,13 @@ MOCK = r"""(imageBase64) => {
     if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'Lasso-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
     if(url.startsWith('/api/ocr'))return json({text:'Contact j.smith@navy.mil or 757-555-0142 Nautilus',engine:'mock',lines:[{text:'Contact j.smith@navy.mil or 757-555-0142',words:[{text:'Contact',x:60,y:100,w:70,h:20},{text:'j.smith@navy.mil',x:140,y:100,w:160,h:20},{text:'or',x:310,y:100,w:20,h:20},{text:'757-555-0142',x:340,y:100,w:120,h:20}]},{text:'Nautilus',words:[{text:'Nautilus',x:60,y:200,w:80,h:20}]}]});
     if(url.startsWith('/api/settings')){if(options.method==='PUT'){window.__settings=JSON.parse(options.body);return json({...window.__settings,saved:true})}return json(window.__settings?{...window.__settings,saved:true}:{namePrefix:'Lasso',autoLibrary:false,recordFps:6,saved:false})}
-    if(url.startsWith('/api/events'))return json(window.__hotkey?{events:[{id:7,type:'capture',name:'Lasso-Hot.png',source:'region'}],latest:7}:{events:[],latest:3});
+    if(url.startsWith('/api/heartbeat')){const b=JSON.parse(options.body||'{}');(window.__beats=window.__beats||[]).push({...b,token:(options.headers||{})['X-Lasso-Token']});return json({autoStop:true,timeoutSeconds:20})}
+    if(url.startsWith('/api/session/stop')){window.__stopIntent=(options.headers||{})['X-Lasso-Intent'];return json({stopped:true})}
+    if(url.startsWith('/api/events')){const since=Number((url.match(/since=(\d+)/)||[])[1]||0);return json(window.__hotkey&&since<7?{events:[{id:7,type:'capture',name:'Lasso-Hot.png',source:'region'}],latest:7}:{events:[],latest:window.__hotkey?7:3})}
     return json({error:'not found'},404);
   };
+  window.__beacons=[];
+  navigator.sendBeacon=(url,blob)=>{blob.text().then(t=>window.__beacons.push({url,body:JSON.parse(t)}));return true};
 }"""
 
 with sync_playwright() as p:
@@ -156,7 +160,22 @@ with sync_playwright() as p:
     page.locator('#undo').click()
     page.wait_for_function("document.querySelector('#canvas').width===900", timeout=6000)
     assert page.locator('#layers button').count() == layers_before, 'undo of crop lost annotations'
-    assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop')
+    # Lifecycle: the tab heartbeats with its own id and the session header; pagehide sends a beacon with the token in the body.
+    page.wait_for_function('(window.__beats||[]).length>=1', timeout=6000)
+    beat = page.evaluate('window.__beats[0]')
+    assert beat['tab'] and beat['leaving'] is False and beat['token'] and 'session' not in beat, f'bad heartbeat {beat}'
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:false}))")
+    page.wait_for_function('window.__beacons.length===1', timeout=6000)
+    beacon = page.evaluate('window.__beacons[0]')
+    assert beacon['url'] == '/api/heartbeat' and beacon['body']['leaving'] is True and beacon['body']['session'] == beat['token'] and beacon['body']['tab'] == beat['tab'], f'bad beacon {beacon}'
+    assert '?' not in beacon['url'], 'token must never travel in the query string'
     page.screenshot(path=str(ROOT/'tests/preview.png'), full_page=True)
+    # End session (main navigation) stops the host after a confirmation and says so.
+    page.once('dialog', lambda dialog: dialog.accept())
+    page.locator('#endSession').click()
+    page.wait_for_selector('.session-ended', timeout=6000)
+    assert page.evaluate('window.__stopIntent') == 'end-session'
+    assert 'Lasso has stopped' in page.locator('.session-ended').inner_text()
+    assert not errors, 'JS errors: '+repr(errors)
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, heartbeat/beacon, End session')
     browser.close()

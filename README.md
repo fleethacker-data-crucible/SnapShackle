@@ -13,7 +13,21 @@ Lasso was previously called **SnipHero**. See [the roadmap](https://claude.ai/ar
 1. Extract **the entire archive**, retaining `assets/`, `modules/`, and `tests/`.
 2. Double-click **`Lasso.bat`** to launch the GUI. This is the **only batch launcher**; `Start-Lasso.ps1` is the direct PowerShell/terminal entry point.
 3. Lasso first tries **127.0.0.1:8765**. If Keystone, Cascade, ARC, or another application already uses it, Lasso **binds an available loopback port** and opens its browser at the **actual chosen address**. Other servers are never stopped, modified, or taken over. Use the URL printed in the console if the browser does not launch automatically.
-4. Keep the terminal open while using Lasso. Press Ctrl+C to stop Lasso alone.
+4. **Closing the studio tab stops Lasso**: the local server, the tray icon and the global hotkeys, about 5 seconds after the last studio tab closes (20 seconds if the browser just disappears). A reload does not stop it, and with two studio tabs open, closing one keeps it running. **End session** (top right of the studio), **Exit** in the tray menu, `Stop-Lasso.ps1` or Ctrl+C in the console also stop it.
+
+### Session lifecycle
+
+| You want | Do this |
+| --- | --- |
+| Lasso only while the studio is open (default) | `Lasso.bat`. Closing the tab stops everything, so nothing hides in the background holding the port or the hotkeys. |
+| Hotkeys and the tray icon after the studio closes | `Lasso.bat --stay` (or `-Stay`), or tick **Workflows → Settings → Keep hotkeys in the tray after this tab closes**. The tray icon stays visible; right-click it and choose **Exit** to stop Lasso. Click it to reopen the studio. |
+| Never auto-stop (scripts, testing) | Set `LASSO_AUTO_STOP=0` before starting. |
+| Stop every running Lasso from a shell | `powershell -NoProfile -ExecutionPolicy Bypass -File Stop-Lasso.ps1` |
+
+- **Hidden tabs.** A studio tab in the background keeps Lasso running (it reports itself hidden and gets 75 seconds between heartbeats, because browsers slow timers in background tabs). A tab the browser puts to sleep or discards (Edge "sleeping tabs") counts as closed; use `--stay` or the tray preference if you rely on hotkeys with the studio long in the background.
+- **One instance.** If Lasso is already running, the launcher says where and asks *Stop it and start fresh?*. `--replace` (or `-Replace`) answers yes without asking.
+- **Never mid-save.** Auto-stop waits while a hotkey capture is still being saved, copied and indexed, then stops on the next check.
+- **Runtime files.** Each running Lasso writes `%LOCALAPPDATA%\Lasso\logs\lasso-server-<pid>.json` (pid, port, URL, start time; never the session token) next to its captures and settings, and deletes it when it stops. `Stop-Lasso.ps1` and the launcher read these, remove stale ones, and also find a Lasso started without one. A running Lasso is asked to stop first, so it removes its tray icon and releases its hotkeys itself; only one that does not answer is force-stopped.
 
 ### Why the batch launcher exists
 
@@ -27,9 +41,11 @@ Lasso's HTTP server now uses a **raw `TcpListener` bound exclusively to 127.0.0.
 Lasso.bat -NoBrowser
 Lasso.bat -Port 9000
 Lasso.bat -Diagnostics
+Lasso.bat --stay
+Lasso.bat --replace
 ```
 
-`-NoBrowser` keeps the host running and prints its URL. `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts Lasso separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
+`-NoBrowser` keeps the host running and prints its URL (it then stops once a studio tab that connected has closed; add `--stay` to keep it). `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts Lasso separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
 
 Captures live under `%LOCALAPPDATA%\Lasso\Captures`. On first start, Lasso **moves** any SnipHero captures from `%LOCALAPPDATA%\SnipHero\Captures` into it (files are never copied, deleted or overwritten; a name that already exists stays in the old folder). Old `SnipHero-*.png` names and `.sniphero.json` projects keep working. Browser settings are stored locally (`localStorage`). Screenshot bytes and OCR data are not transmitted off the computer by Lasso. This single-user local service is not an authentication boundary against programs already running under your own user identity; do not expose it on network interfaces.
 
@@ -51,7 +67,7 @@ Captures live under `%LOCALAPPDATA%\Lasso\Captures`. On first start, Lasso **mov
   | Screen under the cursor | `Shift+PrtScn` | `Ctrl+Alt+F` |
 
   The console, the tray tooltip menu and **Workflows → Diagnostics** show which chords are active. A hotkey capture is copied to the clipboard (bitmap plus PNG), saved to the library, and opened in the studio if it is open. Click the notification or the tray icon to open the studio.
-- **Tray icon** with Capture region, Capture screen, Open studio and Quit Lasso. Start with `-NoTray` to skip hotkeys and the tray.
+- **Tray icon** with Capture region, Capture screen, Open studio and Exit. Start with `-NoTray` to skip hotkeys and the tray. By default the tray icon and hotkeys go away with the studio tab; see [Session lifecycle](#session-lifecycle) to keep them.
 - **Selection overlay:** hovering highlights the window under the cursor and a click takes it; dragging draws a free region; `Shift` keeps it square; `Esc` or right-click cancels. A loupe shows magnified pixels, screen coordinates and the colour under the cursor. The overlay takes keyboard focus as it opens.
 - **Window capture uses `PrintWindow`** (`PW_RENDERFULLCONTENT`), so a window's own content is captured even where other windows, including the studio, cover it. Apps that answer with a blank image fall back to screen pixels; the status bar says which method was used. Window bounds come from DWM, so the invisible 7 px resize borders are no longer included, and windows on other virtual desktops are hidden from the list.
 - **Per-monitor DPI v2**, so selections line up on mixed-DPI monitors.
@@ -100,7 +116,7 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 
 - `pwsh dev/csharp_check.ps1 -ReferenceDir <v4.8 reference assemblies>` compiles every inline C# block as C# 5 against .NET Framework 4.8 (what Windows PowerShell 5.1 uses), so native code can be checked without Windows. Reference assemblies: the `v4.8` folder of [mono/reference-assemblies](https://github.com/mono/reference-assemblies).
 - `python tests/effects_test.py` checks that blur stays aligned with what it covers.
-- `powershell -NoProfile -File tests/host_tests.ps1` tests the HTTP transport (Host checks, port fallback, rejected requests) and the SnipHero migration. It also parses every `.ps1` file. Runs on Windows PowerShell 5.1 and PowerShell 7.
+- `powershell -NoProfile -File tests/host_tests.ps1` tests the HTTP transport (Host checks, port fallback, rejected requests), the SnipHero migration and the lifecycle rules on a simulated clock (heartbeat timeout, leaving grace, reload, several tabs, busy capture, sleep/wake, runtime files, stopping an instance without its PID). It also parses every `.ps1` file. Runs on Windows PowerShell 5.1 and PowerShell 7.
 - CI runs these on the self-hosted Windows runner (`.github/workflows/tests.yml`). Pushing a `v*` tag that matches `VERSION` builds `Lasso-<version>.zip` with runtime files only (`release.yml`).
 
 Only development/testing requires Python, Pillow, Chromium/Playwright or Node. **Runtime has no dependency on these tools.**
@@ -121,6 +137,7 @@ Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR 
 ```text
 Lasso.bat                  Windows GUI launcher (process-scoped PowerShell flags)
 Start-Lasso.ps1            Local HTTP host, capture API and library
+Stop-Lasso.ps1             Stops every running Lasso (server, tray icon, hotkeys) without PIDs
 VERSION                    Single source of the version number
 modules/LocalHttp.ps1      Loopback TCP / bounded HTTP adapter and dynamic port binding
 modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
@@ -128,6 +145,7 @@ modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time move of SnipHero captures into the Lasso library
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
 modules/Tray.ps1           Global hotkeys and tray icon on their own STA thread
+modules/Lifecycle.ps1      Tab-owns-the-server presence rule, runtime files, finding/stopping instances
 index.html                 Studio layout
 assets/styles.css          Standalone responsive theme
 assets/editor.js           Editable non-destructive object engine
