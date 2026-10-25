@@ -50,10 +50,14 @@ with sync_playwright() as p:
     html = (ROOT/'index.html').read_text(encoding='utf-8')
     # Load the same scripts, in the same order, as the real page.
     scripts = re.findall(r'<script[^>]*src="/assets/([a-z]+)\.js"', html)
+    # ...and the same stylesheets (the Fleet tokens first, then the studio's).
+    styles = re.findall(r'<link rel="stylesheet" href="/(assets/[a-z/]+\.css)"', html)
     html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
     html = re.sub(r'<link[^>]*stylesheet[^>]*>', '', html)
     page.set_content(html)
-    page.add_style_tag(path=str(ROOT/'assets/styles.css'))
+    assert styles == ['assets/vendor/fleet/fleet.css','assets/styles.css'], styles
+    for sheet in styles:
+        page.add_style_tag(path=str(ROOT/sheet))
     page.evaluate(MOCK, image_b64)
     for name in scripts:
         page.add_script_tag(path=str(ROOT/'assets'/f'{name}.js'))
@@ -124,7 +128,7 @@ with sync_playwright() as p:
     assert page.evaluate("document.documentElement.dataset.theme") == 'dark'
     page.locator('#themeToggle').click()
     page.wait_for_function("document.documentElement.dataset.theme==='light' && window.__settings && window.__settings.theme==='light'", timeout=6000)
-    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(246, 247, 251)', 'light tokens not applied'
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(251, 250, 242)', 'Fleet Chart room tokens not applied'
     page.locator('#themeToggle').click()
     page.wait_for_function("document.documentElement.dataset.theme==='dark' && window.__settings.theme==='dark'", timeout=6000)
     # Single-key tool shortcuts (ignored while typing in a field).
