@@ -3,12 +3,12 @@
   so a capture starts from the keyboard and never includes the studio window.
   After a hotkey capture the image is copied to the clipboard, saved to the library, and announced
   to the studio through /api/events.
-  Shutdown: when the host sets $Shared.Quit (tab closed, End session, Exit, Stop-CutterMk.ps1, Ctrl+C)
+  Shutdown: when the host sets $Shared.Quit (tab closed, End session, Exit, Stop-SnapShackle.ps1, Ctrl+C)
   a timer leaves the message loop; the finally block unregisters every hotkey on this thread (the
   thread that registered them) and disposes the NotifyIcon, which removes it from the tray, so no
   ghost icon is left behind.
 #>
-if (-not ('CutterMk.HotkeyWindow' -as [type])) {
+if (-not ('SnapShackle.HotkeyWindow' -as [type])) {
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -16,7 +16,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-namespace CutterMk {
+namespace SnapShackle {
  public sealed class HotkeyWindow : NativeWindow, IDisposable {
   [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint key);
   [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
@@ -40,7 +40,7 @@ namespace CutterMk {
  }
  public static class TrayArt {
   [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
-  // The CutterMk mark: a dashed violet capture frame with a white cut line, drawn at runtime so no icon file ships.
+  // The SnapShackle mark: a dashed violet capture frame with a white cut line, drawn at runtime so no icon file ships.
   public static Icon Make(){
    using(var bmp=new Bitmap(32,32)){
     using(var g=Graphics.FromImage(bmp)){
@@ -59,13 +59,13 @@ namespace CutterMk {
 
 # One entry per action: the preferred chord, then a fallback if another app (or Windows'
 # Print Screen -> Snipping Tool setting) already owns it.
-$script:CutterMkHotkeyPlan = @(
+$script:SnapShackleHotkeyPlan = @(
     @{ Id = 1; Action = 'region'; Chords = @(@{ Mods = 0; Key = 0x2C; Label = 'PrtScn' }, @{ Mods = 3; Key = 0x53; Label = 'Ctrl+Alt+S' }) },
     @{ Id = 2; Action = 'window'; Chords = @(@{ Mods = 1; Key = 0x2C; Label = 'Alt+PrtScn' }, @{ Mods = 3; Key = 0x57; Label = 'Ctrl+Alt+W' }) },
     @{ Id = 3; Action = 'screen'; Chords = @(@{ Mods = 4; Key = 0x2C; Label = 'Shift+PrtScn' }, @{ Mods = 3; Key = 0x46; Label = 'Ctrl+Alt+F' }) }
 )
 
-$script:CutterMkTrayScript = {
+$script:SnapShackleTrayScript = {
     param($Root, $Library, $Shared, $Plan)
     $ErrorActionPreference = 'Stop'
     try {
@@ -77,9 +77,9 @@ $script:CutterMkTrayScript = {
         . (Join-Path $Root 'modules/Tray.ps1')
 
         $tray = [Windows.Forms.NotifyIcon]::new()
-        $tray.Icon = [CutterMk.TrayArt]::Make()
-        $tray.Text = 'CutterMk'
-        $hotkeys = [CutterMk.HotkeyWindow]::new()
+        $tray.Icon = [SnapShackle.TrayArt]::Make()
+        $tray.Text = 'SnapShackle'
+        $hotkeys = [SnapShackle.HotkeyWindow]::new()
         $labels = @{}
         foreach ($entry in $Plan) {
             foreach ($chord in $entry.Chords) {
@@ -96,7 +96,7 @@ $script:CutterMkTrayScript = {
             while ($Shared.Events.Count -gt 50) { $Shared.Events.RemoveAt(0) }
         }
         $openStudio = {
-            if (-not [CutterMk.Native]::ActivateByTitle('CutterMk Studio')) {
+            if (-not [SnapShackle.Native]::ActivateByTitle('SnapShackle Studio')) {
                 $url = $Shared.BaseUrl
                 if ($Shared.LastName) { $url += '#open=' + $Shared.LastName }
                 Start-Process $url
@@ -109,12 +109,12 @@ $script:CutterMkTrayScript = {
             try {
                 $png = $null
                 switch ($Action) {
-                    'region' { $png = Get-CutterMkRegion }
-                    'window' { $png = Get-CutterMkWindowCapture ([CutterMk.Native]::Foreground()) }
-                    'screen' { $png = Get-CutterMkRect ([Windows.Forms.Screen]::FromPoint([Windows.Forms.Control]::MousePosition).Bounds) }
+                    'region' { $png = Get-SnapShackleRegion }
+                    'window' { $png = Get-SnapShackleWindowCapture ([SnapShackle.Native]::Foreground()) }
+                    'screen' { $png = Get-SnapShackleRect ([Windows.Forms.Screen]::FromPoint([Windows.Forms.Control]::MousePosition).Bounds) }
                 }
                 if ($null -eq $png) { return }
-                $name = Save-CutterMkCapture $Library $png
+                $name = Save-SnapShackleCapture $Library $png
                 $Shared.LastName = $name
                 $stream = [IO.MemoryStream]::new($png, $false)
                 $image = [Drawing.Image]::FromStream($stream)
@@ -126,12 +126,12 @@ $script:CutterMkTrayScript = {
                     [Windows.Forms.Clipboard]::SetDataObject($data, $true)
                 } finally { $image.Dispose(); $stream.Dispose() }
                 & $addEvent 'capture' @{ name = $name; source = $Action }
-                $tray.ShowBalloonTip(2500, 'Copied to clipboard', 'Saved to your CutterMk library. Click to edit.', [Windows.Forms.ToolTipIcon]::None)
+                $tray.ShowBalloonTip(2500, 'Copied to clipboard', 'Saved to your SnapShackle library. Click to edit.', [Windows.Forms.ToolTipIcon]::None)
                 # Index the text in the image for library search (this thread, so the server never waits).
-                $null = Update-CutterMkOcrIndex $Library $name $png
+                $null = Update-SnapShackleOcrIndex $Library $name $png
             } catch {
                 $Shared.LastError = $_.Exception.Message
-                $tray.ShowBalloonTip(4000, 'CutterMk could not capture', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Warning)
+                $tray.ShowBalloonTip(4000, 'SnapShackle could not capture', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Warning)
             } finally { $Shared.Busy = $false }
         }
 
@@ -166,8 +166,8 @@ $script:CutterMkTrayScript = {
         $Shared.TrayIcon = $tray
         $Shared.TrayReady = $true
         if ($Shared.Stay) {
-            $tray.Text = 'CutterMk (stays in the tray; right-click to exit)'
-            $tray.ShowBalloonTip(3000, 'CutterMk is in the tray', 'Hotkeys stay on after the studio closes. Right-click this icon and choose Exit to stop CutterMk.', [Windows.Forms.ToolTipIcon]::None)
+            $tray.Text = 'SnapShackle (stays in the tray; right-click to exit)'
+            $tray.ShowBalloonTip(3000, 'SnapShackle is in the tray', 'Hotkeys stay on after the studio closes. Right-click this icon and choose Exit to stop SnapShackle.', [Windows.Forms.ToolTipIcon]::None)
         }
         [Windows.Forms.Application]::Run()
     } catch {
@@ -183,20 +183,20 @@ $script:CutterMkTrayScript = {
     }
 }
 
-# Starts the tray thread. Returns a handle for Stop-CutterMkTray.
-function Start-CutterMkTray([string]$Root, [string]$Library, $Shared) {
+# Starts the tray thread. Returns a handle for Stop-SnapShackleTray.
+function Start-SnapShackleTray([string]$Root, [string]$Library, $Shared) {
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.ApartmentState = 'STA'
     $runspace.ThreadOptions = 'ReuseThread'
     $runspace.Open()
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($script:CutterMkTrayScript).AddArgument($Root).AddArgument($Library).AddArgument($Shared).AddArgument($script:CutterMkHotkeyPlan)
+    [void]$ps.AddScript($script:SnapShackleTrayScript).AddArgument($Root).AddArgument($Library).AddArgument($Shared).AddArgument($script:SnapShackleHotkeyPlan)
     $async = $ps.BeginInvoke()
     return @{ PowerShell = $ps; Runspace = $runspace; Async = $async }
 }
 # Returns $true when the tray thread finished cleanly, $false when it had to be abandoned.
-function Stop-CutterMkTray($Handle, $Shared) {
+function Stop-SnapShackleTray($Handle, $Shared) {
     if ($null -eq $Handle) { return $true }
     $Shared.Quit = $true
     # The tray thread leaves its message loop on the next timer tick (400 ms), then cleans up itself.

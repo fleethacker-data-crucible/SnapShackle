@@ -13,12 +13,19 @@ function apply(value) {
   document.documentElement.dataset.themeChoice = choice;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = theme === 'light' ? '#f6f7fb' : '#0b0e17';
-  try { localStorage.setItem('cuttermk-theme', choice); } catch {}
+  try { localStorage.setItem('snapshackle-theme', choice); } catch {}
   return theme;
 }
+// The theme saved under earlier names ('cuttermk-theme', 'lasso-theme') is copied forward to
+// 'snapshackle-theme' (apply() writes it); the old keys are left in place for older builds.
 let saved = 'dark';
-try { saved = localStorage.getItem('cuttermk-theme') || localStorage.getItem('lasso-theme') || 'dark'; } catch {}
+try {
+  saved = localStorage.getItem('snapshackle-theme');
+  if (saved === null) saved = localStorage.getItem('cuttermk-theme');
+  if (saved === null) saved = localStorage.getItem('lasso-theme');
+  if (saved === null) saved = 'dark';
+} catch { saved = 'dark'; }
 apply(saved);
 if (media && media.addEventListener) media.addEventListener('change', () => { if (choice === 'system') apply('system'); });
-window.CutterMkTheme = { apply, get choice() { return choice; }, get theme() { return resolve(choice); } };
+window.SnapShackleTheme = { apply, get choice() { return choice; }, get theme() { return resolve(choice); } };
 })();
