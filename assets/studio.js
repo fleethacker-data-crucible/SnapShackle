@@ -3,10 +3,12 @@
 'use strict';
 const $=selector=>document.querySelector(selector);
 const TOKEN='__SESSION_TOKEN__';
+// Sets a button to an icon plus a label (used for buttons whose state changes, e.g. Record/Stop).
+function setButton(el,iconName,label,live=false){el.innerHTML=LassoIcons.icon(iconName)+'<span>'+label+'</span>';el.classList.toggle('is-live',live)}
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-Lasso-Token':TOKEN}});
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'Lasso',autoLibrary:false,recordFps:6,stayInTray:false};
+let settings={namePrefix:'Lasso',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.LassoTheme?.choice)||'dark'};
 // Read SnipHero-era settings once so a rename does not reset preferences.
 try {const saved=localStorage.getItem('lasso-settings')??localStorage.getItem('sniphero-settings');settings={...settings,...JSON.parse(saved||'{}')};if(settings.namePrefix==='SnipHero')settings.namePrefix='Lasso'}catch{}
 function notify(message){$('#status').textContent=message}
@@ -80,8 +82,11 @@ $('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose a
 async function getSharedScreen(){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia({video:{frameRate:settings.recordFps},audio:false})}
 async function videoFor(stream){let video=document.createElement('video');video.srcObject=stream;video.muted=true;await video.play();if(!video.videoWidth)await new Promise(r=>setTimeout(r,400));return video}
 $('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(await new Promise(resolve=>temp.toBlob(resolve,'image/png')),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
-const toolNames={select:'↖ Select',arrow:'↗ Arrow',rectangle:'▢ Rectangle',ellipse:'◯ Ellipse',line:'╱ Line',pen:'✎ Pen',highlight:'▰ Highlight',text:'T Text',step:'① Steps',crop:'⌗ Crop',redact:'■ Redact',pixelate:'▦ Pixelate',blur:'◍ Blur'};
-for(let [tool,title] of Object.entries(toolNames)){let button=document.createElement('button');button.className='tool';let parts=title.split(' ');button.innerHTML='<span class="tool-symbol">'+parts.shift()+'</span><span>'+parts.join(' ')+'</span>';button.title=title;button.dataset.tool=tool;
+// Each tool: icon, label and a single-key shortcut (works while the canvas page has focus, not in text fields).
+const toolNames={select:['select','Select','V'],arrow:['arrow','Arrow','A'],rectangle:['rectangle','Rectangle','R'],ellipse:['ellipse','Ellipse','E'],line:['line','Line','L'],pen:['pen','Pen','P'],highlight:['highlight','Highlight','H'],text:['text','Text','T'],step:['step','Steps','N'],crop:['crop','Crop','C'],redact:['redact','Redact','X'],pixelate:['pixelate','Pixelate','Q'],blur:['blur','Blur','B']};
+const toolKeys={};
+for(let [tool,[iconName,title,key]] of Object.entries(toolNames)){let button=document.createElement('button');button.className='tool';
+  button.innerHTML=LassoIcons.icon(iconName)+'<span>'+title+'</span><span class="tool-key" aria-hidden="true">'+key+'</span>';button.title=title+' ('+key+')';button.dataset.tool=tool;button.setAttribute('aria-keyshortcuts',key);toolKeys[key.toLowerCase()]=button;
   button.onclick=()=>{editor.tool=tool;for(let b of $('#tools').children)b.classList.toggle('active',b===button);notify('Tool: '+title)};$('#tools').append(button)}
 $('#tools').firstElementChild.click();
 // Drag-to-crop keeps annotations editable; afterwards the select tool comes back.
@@ -163,19 +168,19 @@ $('#record').onclick=async()=>{
  try{recordStream=await getSharedScreen();const supported=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));if(!supported)throw Error('WebM recording not supported');
    const chunks=[];const stream=recordStream;recorder=new MediaRecorder(stream,{mimeType:supported});
    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-   recorder.onstop=()=>{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName('webm'));stream.getTracks().forEach(t=>t.stop());recordStream=null;recorder=null;$('#record').innerHTML='● <span>Record video</span>';notify('WebM recording exported')};
+   recorder.onstop=()=>{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName('webm'));stream.getTracks().forEach(t=>t.stop());recordStream=null;recorder=null;setButton($('#record'),'record','Record video');notify('WebM recording exported')};
    for(let track of stream.getVideoTracks())track.onended=()=>{if(recorder?.state==='recording')recorder.stop()};
-   recorder.start(1000);$('#record').innerHTML='■ <span>Stop recording</span>';notify('Recording: use Stop to export WebM');
+   recorder.start(1000);setButton($('#record'),'stop','Stop recording',true);notify('Recording: use Stop to export WebM');
  }catch(e){recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;recorder=null;fail(e)}
 };
 $('#gif').onclick=async()=>{
  if(recorder||scrollInterval)return notify('Finish video or scrolling capture before recording GIF');
  if(gifInterval){clearInterval(gifInterval);gifInterval=null;recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;
-   try{if(!gifFrames.length)throw Error('No recorded GIF frames');let blob=LassoGif.encode(gifFrames,gifCanvas.width,gifCanvas.height,Math.round(1000/settings.recordFps));download(blob,downloadName('gif'));notify('Animated GIF exported · '+gifFrames.length+' frames')}catch(e){fail(e)}finally{gifFrames=[];$('#gif').innerHTML='◉ <span>GIF</span>'}return}
+   try{if(!gifFrames.length)throw Error('No recorded GIF frames');let blob=LassoGif.encode(gifFrames,gifCanvas.width,gifCanvas.height,Math.round(1000/settings.recordFps));download(blob,downloadName('gif'));notify('Animated GIF exported · '+gifFrames.length+' frames')}catch(e){fail(e)}finally{gifFrames=[];setButton($('#gif'),'gif','GIF')}return}
  try{recordStream=await getSharedScreen();const video=await videoFor(recordStream);gifCanvas=document.createElement('canvas');const scale=Math.min(1,640/video.videoWidth,480/video.videoHeight);gifCanvas.width=Math.max(2,Math.round(video.videoWidth*scale));gifCanvas.height=Math.max(2,Math.round(video.videoHeight*scale));
    gifFrames=[];const ctx=gifCanvas.getContext('2d',{willReadFrequently:true});for(let track of recordStream.getVideoTracks())track.onended=()=>{if(gifInterval)$('#gif').click()};
    gifInterval=setInterval(()=>{if(gifFrames.length>=100){$('#gif').click();return}ctx.drawImage(video,0,0,gifCanvas.width,gifCanvas.height);gifFrames.push(ctx.getImageData(0,0,gifCanvas.width,gifCanvas.height).data.slice());notify('GIF recording · '+gifFrames.length+'/100 frames')},1000/settings.recordFps);
-   $('#gif').innerHTML='■ <span>Finish GIF</span>';
+   setButton($('#gif'),'stop','Finish GIF',true);
  }catch(e){recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;fail(e)}
 };
 function graySignature(ctx,width,height){
@@ -186,7 +191,7 @@ function signatureChange(a,b){if(!a)return Infinity;let sum=0;for(let i=0;i<a.le
 $('#scrollAuto').onclick=async()=>{
  if(recorder||gifInterval)return notify('Finish your recording before scrolling capture');
  if(scrollInterval){clearInterval(scrollInterval);scrollInterval=null;scrollStream?.getTracks().forEach(t=>t.stop());scrollStream=null;scrollVideo=null;scrollPrevious=null;
-   $('#scrollAuto').textContent='▶ Record scrolling views';notify('Automatic collection stopped — '+stitchTiles.length+' tiles ready to stitch');return}
+   setButton($('#scrollAuto'),'scroll','Record scrolling views');notify('Automatic collection stopped — '+stitchTiles.length+' tiles ready to stitch');return}
  try {
    scrollStream=await getSharedScreen();scrollVideo=await videoFor(scrollStream);
    const cap=document.createElement('canvas');cap.width=scrollVideo.videoWidth;cap.height=scrollVideo.videoHeight;
@@ -200,7 +205,7 @@ $('#scrollAuto').onclick=async()=>{
        if(change>4.2){scrollPrevious=current;stitchTiles.push(await createImageBitmap(cap));$('#stitchCount').textContent=stitchTiles.length+' tiles queued';notify('Scrolling view '+stitchTiles.length+' captured — scroll target to continue')}
      }catch(e){fail(e)}
    },550);
-   $('#scrollAuto').textContent='■ Stop collecting';notify('Scroll the shared target; changed views are captured automatically')
+   setButton($('#scrollAuto'),'stop','Stop collecting',true);notify('Scroll the shared target; changed views are captured automatically')
  }catch(e){scrollStream?.getTracks().forEach(t=>t.stop());scrollStream=null;fail(e)}
 };
 $('#scrollAdd').onclick=async()=>{try{if(stitchTiles.length>=35)throw Error('Maximum 35 tiles');const blob=await editor.export();stitchTiles.push(await createImageBitmap(blob));$('#stitchCount').textContent=stitchTiles.length+' tiles queued';notify('Tile '+stitchTiles.length+' added — scroll the target and capture again')}catch(e){fail(e)}};
@@ -237,21 +242,27 @@ $('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.tr
   notify('Reading text…');const r=await recognize();const hits=LassoRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
   notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
-function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray}
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#theme').value=settings.theme;applyTheme(settings.theme)}
+// Theme follows ARC: dark by default, light on request, or match Windows.
+function applyTheme(choice){const theme=window.LassoTheme?LassoTheme.apply(choice):'dark';const toggle=$('#themeToggle');
+  if(toggle){toggle.innerHTML=LassoIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
+$('#themeToggle').onclick=()=>{settings.theme=(window.LassoTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
+$('#theme').onchange=()=>{settings.theme=$('#theme').value;applyTheme(settings.theme)};
+function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme}}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
 async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
-    if(saved.saved){settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray}}
+    if(saved.saved){settings=fromHost(saved)}
     else{await saveSettings(false)}  // First run: move browser-stored preferences to the host once.
     showSettings()}catch(e){console.warn('[Lasso] settings',e)}
 }
 async function saveSettings(announce=true){
   try{localStorage.setItem('lasso-settings',JSON.stringify(settings))}catch{}
   const r=await api('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(settings)});
-  if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings={...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray};
+  if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings=fromHost(saved);
   if(announce){showSettings();notify('Preferences saved')}
 }
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));saveSettings().catch(fail)};
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.theme=$('#theme').value;saveSettings().catch(fail)};
 showSettings();
 document.addEventListener('keydown',event=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
@@ -260,9 +271,10 @@ document.addEventListener('keydown',event=>{
   else if(event.key==='Delete')editor.deleteSelected();
   else if(event.ctrlKey&&event.shiftKey&&key==='s'){event.preventDefault();$('#region').click()}
   else if(event.ctrlKey&&event.shiftKey&&key==='p'){event.preventDefault();$('#projectSave').click()}
+  else if(!event.ctrlKey&&!event.altKey&&!event.metaKey&&!document.querySelector('dialog[open]')&&toolKeys[key]&&document.activeElement?.tagName!=='SELECT'){event.preventDefault();toolKeys[key].click()}
 });
 const lifecycleText={tab:'stops when this tab closes',stay:'stays in the tray (--stay); Exit in the tray menu',tray:'stays in the tray (preference); Exit in the tray menu',env:'keeps running (LASSO_AUTO_STOP=0)'};
-async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none',life='unknown';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';life=lifecycleText[d.lifecycle]||'unknown';
+async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none',life='unknown';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';if(d.version)$('.side-footer-version').textContent='v'+d.version;ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';life=lifecycleText[d.lifecycle]||'unknown';
    const list=(d.hotkeys||[]).filter(h=>h.keys).map(h=>h.keys+' '+h.action);keys=list.length?list.join(', '):'none registered';const help=$('#globalHotkeys');if(help)help.textContent=keys}}catch{}
  $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nLasso session: '+life+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
 // Hotkey captures happen while the browser is in the background; poll for them.

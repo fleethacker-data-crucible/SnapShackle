@@ -45,9 +45,9 @@ namespace Lasso {
    using(var bmp=new Bitmap(32,32)){
     using(var g=Graphics.FromImage(bmp)){
      g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Color.Transparent);
-     using(var loop=new Pen(Color.FromArgb(255,73,98),3.4f)){loop.DashPattern=new float[]{2.2f,1.2f};g.DrawEllipse(loop,4,3,24,16);}
+     using(var loop=new Pen(Color.FromArgb(139,125,255),3.4f)){loop.DashPattern=new float[]{2.2f,1.2f};g.DrawEllipse(loop,4,3,24,16);}
      using(var rope=new Pen(Color.FromArgb(235,235,240),2.6f)){rope.StartCap=LineCap.Round;rope.EndCap=LineCap.Round;g.DrawBezier(rope,11,18,6,25,13,29,18,30);}
-     using(var knot=new SolidBrush(Color.FromArgb(255,73,98)))g.FillEllipse(knot,9,16,5,5);
+     using(var knot=new SolidBrush(Color.FromArgb(86,184,248)))g.FillEllipse(knot,9,16,5,5);
     }
     IntPtr h=bmp.GetHicon();
     try{using(var tmp=Icon.FromHandle(h))return (Icon)tmp.Clone();}finally{DestroyIcon(h);}

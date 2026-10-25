@@ -120,6 +120,23 @@ with sync_playwright() as p:
     page.locator('#prefix').fill('Ops')
     page.locator('#settingsSave').click()
     page.wait_for_function('window.__settings.namePrefix==="Ops"', timeout=6000)
+    # Theme toggle switches to light and saves the choice to the host.
+    assert page.evaluate("document.documentElement.dataset.theme") == 'dark'
+    page.locator('#themeToggle').click()
+    page.wait_for_function("document.documentElement.dataset.theme==='light' && window.__settings && window.__settings.theme==='light'", timeout=6000)
+    assert page.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(246, 247, 251)', 'light tokens not applied'
+    page.locator('#themeToggle').click()
+    page.wait_for_function("document.documentElement.dataset.theme==='dark' && window.__settings.theme==='dark'", timeout=6000)
+    # Single-key tool shortcuts (ignored while typing in a field).
+    page.locator('#canvas').click(position={'x': 5, 'y': 5})
+    page.keyboard.press('a')
+    assert page.locator('[data-tool="arrow"]').get_attribute('class') == 'tool active', 'A did not pick the arrow tool'
+    page.locator('#tabWorkflows').click(); page.locator('#redactTerm').focus(); page.keyboard.press('r'); page.locator('#redactTerm').fill('')
+    assert page.locator('[data-tool="arrow"]').get_attribute('class') == 'tool active', 'typing in a field changed the tool'
+    page.locator('#canvas').click(position={'x': 5, 'y': 5})
+    page.keyboard.press('v')
+    # Icons rendered from the bundled set, not text glyphs.
+    assert page.locator('#tools .tool svg.icon').count() == 13 and page.locator('#region svg.icon').count() == 1
     # Smart redaction: find, untick nothing, apply; then redact a typed word.
     page.locator('#tabLayers').click()
     before = page.locator('#layers button').count()
@@ -177,5 +194,5 @@ with sync_playwright() as p:
     assert page.evaluate('window.__stopIntent') == 'end-session'
     assert 'Lasso has stopped' in page.locator('.session-ended').inner_text()
     assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, heartbeat/beacon, End session')
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, theme toggle, tool shortcuts, heartbeat/beacon, End session')
     browser.close()
