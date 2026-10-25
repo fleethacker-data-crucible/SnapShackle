@@ -8,5 +8,6 @@ Run `dev\Launch-LocalDev.bat` on your **personal Windows PC**. Do not use it on 
 - Startup: starts the localhost studio on preferred port 8790 using normal native Windows capture APIs.
 - Boundary: the application never required CAC. Capture only personal test images, not sensitive workstation information.
 - Diagnostics: `powershell.exe -NoProfile -File Start-Lasso.ps1 -Port 8790 -Diagnostics`.
+- One instance: the dev launcher passes `-Replace`, so it stops any running Lasso first and says which PID it stopped. Closing the studio tab stops the dev server too; add `--stay` to keep it (and its tray icon) running. `Stop-Lasso.ps1` stops every instance.
 
 This is **not** an authenticated Navy session. Do not enter CUI, classified material, real credentials or real personnel information during personal-computer testing.
