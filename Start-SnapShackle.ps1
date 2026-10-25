@@ -43,10 +43,6 @@ foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option 
 . (Join-Path $root 'modules/Tray.ps1')
 $SnapShackleVersion = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
 $library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle\Captures' } else { Join-Path $root 'captures' }
-# Data from earlier names keeps working: on first start CutterMk's captures and settings are copied
-# forward (the CutterMk folder is left as it is), and Lasso and SnipHero data still left over is moved.
-Invoke-SnapShackleMigration -BaseDir $env:LOCALAPPDATA -AppDir (Split-Path -Parent $library)
-[void][IO.Directory]::CreateDirectory($library)
 $settingsPath = Join-Path (Split-Path -Parent $library) 'settings.json'
 # Accept earlier prefixes so CutterMk-, Lasso- and SnipHero-era captures stay visible in the library.
 $CaptureNamePattern = '(?:SnapShackle|CutterMk|Lasso|SnipHero)-[a-zA-Z0-9_.-]+\.png'
@@ -81,6 +77,13 @@ if ($running.Count -gt 0) {
         exit 0
     }
 }
+# Data from earlier names keeps working: on first start CutterMk's captures and settings are copied
+# forward (the CutterMk folder is left as it is), and Lasso and SnipHero data still left over is moved.
+# This runs after any running instance (a CutterMk one included) has been stopped, so its last
+# captures are copied too, and before the library folder is created (an existing SnapShackle
+# folder means the copy already happened).
+Invoke-SnapShackleMigration -BaseDir $env:LOCALAPPDATA -AppDir (Split-Path -Parent $library)
+[void][IO.Directory]::CreateDirectory($library)
 $sessionToken = [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
 # Bind directly to 127.0.0.1; no HttpListener URL ACL or admin permissions.
 # The socket is held from selection through shutdown: no free-port check/bind race.
