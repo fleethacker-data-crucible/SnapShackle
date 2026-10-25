@@ -47,9 +47,14 @@ assert "id=\"endSession\"" in ui and "id=\"stayInTray\"" in ui
 assert "navigator.sendBeacon" in studio and "'/api/heartbeat'" in studio and "pagehide" in studio and "setInterval(()=>heartbeat(),5000)" in studio
 assert (ROOT/'Stop-SnapShackle.ps1').is_file() and 'Stop-SnapShackleProcesses' in (ROOT/'Stop-SnapShackle.ps1').read_text(encoding='utf-8')
 print('PASS: lifecycle wiring (heartbeat, beacon auth, End session, tray Exit, runtime file, Stop-SnapShackle.ps1)')
-# Brand emblems are for the README only: the app must not load or require them (they are not in release zips).
+# The original emblems in assets/brand are for the README only (they are not in release zips). The app
+# shows its own copies from assets/ui (backdrop made transparent, scaled), which ship with assets/.
 for name in ('emblem-dark.png','emblem-light.png'):
  assert (ROOT/'assets/brand'/name).is_file(), name
+for name in ('emblem-dark.png','emblem-light.png','icon-256.png','favicon.ico'):
+ assert (ROOT/'assets/ui'/name).is_file(), name
+assert (ROOT/'assets/vendor/fleet/fleet.css').is_file()
 for source,text in (('index.html',ui),('assets/studio.js',studio),('assets/styles.css',(ROOT/'assets/styles.css').read_text(encoding='utf-8')),('Start-SnapShackle.ps1',host)):
- assert 'assets/brand' not in text and 'emblem-' not in text, source+' must not reference the README emblems'
-print('PASS: README emblems present in assets/brand and not wired into the app')
+ assert 'assets/brand' not in text, source+' must not reference the README emblems'
+assert '/assets/ui/emblem-dark.png' in ui and '/assets/ui/emblem-light.png' in ui and '/assets/vendor/fleet/fleet.css' in ui and 'data-app="snapshackle"' in ui
+print('PASS: README emblems stay in assets/brand; the app uses its copies in assets/ui and the Fleet tokens')

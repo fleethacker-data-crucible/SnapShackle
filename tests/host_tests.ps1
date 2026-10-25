@@ -260,6 +260,22 @@ Test-Case 'Library search matches text inside images, names and tags' {
     } finally { [IO.Directory]::Delete($base, $true) }
 }
 
+Test-Case 'Library API sends a flat items array (0, 1 and many captures)' {
+    # Mirrors GET /api/library in Start-SnapShackle.ps1. Wrapping the list in @(...) nested it as
+    # items:[[...]], which the studio drew as one broken "Invalid Date" card.
+    $base = New-TempDir
+    try {
+        $json = { [object[]]$items = Get-SnapShackleCaptureList $base ''; ConvertTo-Json -InputObject @{items=$items} -Compress -Depth 5 }
+        Assert-True ((& $json) -eq '{"items":[]}') "empty library: $(& $json)"
+        $a = Save-SnapShackleCapture $base ([byte[]](1))
+        Assert-True ((& $json).StartsWith('{"items":[{"name":"' + $a + '"')) "one capture: $(& $json)"
+        $null = Save-SnapShackleCapture $base ([byte[]](2))
+        Assert-True (((& $json) | ConvertFrom-Json).items.Count -eq 2) "two captures: $(& $json)"
+        $hostSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\Start-SnapShackle.ps1'))
+        Assert-True ($hostSource -match '\[object\[\]\]\$items = Get-SnapShackleCaptureList' -and $hostSource -notmatch 'items=@\(Get-SnapShackleCaptureList') 'GET /api/library must not wrap the list in @()'
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+
 Test-Case 'OCR indexing is a no-op where native OCR is unavailable' {
     $base = New-TempDir
     try {
