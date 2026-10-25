@@ -57,7 +57,7 @@ Captures live under `%LOCALAPPDATA%\SnapShackle\Captures`. On first start, when 
 
 ## Renamed to SnapShackle
 
-- Launch with **`Launch-SnapShackle.bat`** (was `CutterMk.bat`); `Start-SnapShackle.ps1` and `Stop-SnapShackle.ps1` replace `Start-CutterMk.ps1` and `Stop-CutterMk.ps1`. Update any shortcut that points at `CutterMk.bat`.
+- Launch with **`Launch-SnapShackle.bat`** (was `CutterMk.bat`); `Start-SnapShackle.ps1` and `Stop-SnapShackle.ps1` replace `Start-CutterMk.ps1` and `Stop-CutterMk.ps1`. `CutterMk.bat` is kept as a one-line stub that runs `Launch-SnapShackle.bat`, so old shortcuts keep working. If you unpack the new zip over a CutterMk folder, delete the leftover `Start-CutterMk.ps1` and `Stop-CutterMk.ps1`: they belong to the old build and fail against the new `modules/`.
 - Data lives in `%LOCALAPPDATA%\SnapShackle`. On first start the CutterMk folder is copied there once and left untouched, so going back to a CutterMk build still finds its own captures (captures made in SnapShackle afterwards stay in SnapShackle).
 - Studio preferences kept in browser storage move to `snapshackle-settings` and `snapshackle-theme`; the `cuttermk-*` keys are copied forward and left in place.
 - A CutterMk (or Lasso) instance that is still running is treated as already running, so the single-instance rule holds across the upgrade (`Stop-SnapShackle.ps1` stops it too).
@@ -167,6 +167,7 @@ Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR 
 
 ```text
 Launch-SnapShackle.bat     Windows GUI launcher (process-scoped PowerShell flags)
+CutterMk.bat               Forwarding stub for shortcuts made before the rename
 Start-SnapShackle.ps1      Local HTTP host, capture API and library
 Stop-SnapShackle.ps1       Stops every running SnapShackle (server, tray icon, hotkeys) without PIDs
 VERSION                    Single source of the version number
