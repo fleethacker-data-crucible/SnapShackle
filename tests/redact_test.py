@@ -4,7 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 root = Path(__file__).resolve().parents[1]
-executable = os.environ.get('LASSO_CHROMIUM') or None
+executable = os.environ.get('CUTTERMK_CHROMIUM') or None
 
 CASES = r'''()=>{
   // Words laid out left to right, 10px per character plus a 6px gap, on one line per row.
@@ -19,9 +19,9 @@ CASES = r'''()=>{
     // Must NOT match: invalid IP octet, failing Luhn card, a date, an 11-digit number.
     line(6,'bad','999.1.1.1','4111','1111','1111','1112','2026-10-24','12345678901'),
   ];
-  const found=LassoRedact.detect(lines,{pad:0});
-  const term=LassoRedact.findText([line(0,'Project','NAUTILUS','and','project','nautilus','Docs')],'project nautilus',{pad:0});
-  const detector=LassoRedact.detect(LassoRedact.fromTextDetector([{rawValue:'mail a@b.co',boundingBox:{x:5,y:6,width:100,height:12}}]),{pad:0});
+  const found=CutterMkRedact.detect(lines,{pad:0});
+  const term=CutterMkRedact.findText([line(0,'Project','NAUTILUS','and','project','nautilus','Docs')],'project nautilus',{pad:0});
+  const detector=CutterMkRedact.detect(CutterMkRedact.fromTextDetector([{rawValue:'mail a@b.co',boundingBox:{x:5,y:6,width:100,height:12}}]),{pad:0});
   return {found:found.map(f=>({kind:f.kind,text:f.text,box:f.box})),term:term.map(t=>t.box),detector:detector.map(d=>d.box)};
 }'''
 

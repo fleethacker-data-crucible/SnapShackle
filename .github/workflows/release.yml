@@ -10,30 +10,30 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@v4
-      - name: Build Lasso-<version>.zip (runtime files only)
+      - name: Build CutterMk-<version>.zip (runtime files only)
         shell: powershell
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
             throw "Tag $env:GITHUB_REF_NAME does not match VERSION $version"
           }
-          $stage = Join-Path $env:RUNNER_TEMP "Lasso-$version"
+          $stage = Join-Path $env:RUNNER_TEMP "CutterMk-$version"
           if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
           New-Item -ItemType Directory $stage | Out-Null
           # Runtime only: no tests, dev launcher, CI config or docs images.
-          foreach ($item in 'Lasso.bat','Start-Lasso.ps1','Stop-Lasso.ps1','VERSION','index.html','README.md','assets','modules') {
+          foreach ($item in 'CutterMk.bat','Start-CutterMk.ps1','Stop-CutterMk.ps1','VERSION','index.html','README.md','assets','modules') {
             Copy-Item $item -Destination $stage -Recurse
           }
-          $zip = Join-Path $env:RUNNER_TEMP "Lasso-$version.zip"
+          $zip = Join-Path $env:RUNNER_TEMP "CutterMk-$version.zip"
           Compress-Archive -Path $stage -DestinationPath $zip -Force
           "ZIP=$zip" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
-          name: lasso-release
+          name: cuttermk-release
           path: ${{ env.ZIP }}
       - name: Attach to the GitHub release
         if: github.ref_type == 'tag'
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME $env:ZIP --title "Lasso $env:GITHUB_REF_NAME" --generate-notes
+        run: gh release create $env:GITHUB_REF_NAME $env:ZIP --title "CutterMk $env:GITHUB_REF_NAME" --generate-notes
