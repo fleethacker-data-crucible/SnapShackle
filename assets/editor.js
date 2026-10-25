@@ -1,10 +1,10 @@
-/* CutterMk canvas object editor. No dependencies, no network calls. */
+/* SnapShackle canvas object editor. No dependencies, no network calls. */
 (() => {
 'use strict';
 const clone = value => JSON.parse(JSON.stringify(value));
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
-class CutterMkEditor {
+class SnapShackleEditor {
   constructor(canvas, onChange=()=>{}) {
     this.canvas=canvas; this.ctx=canvas.getContext('2d',{alpha:false});
     this.onChange=onChange; this.background=null; this._img=null; this.objects=[];
@@ -204,5 +204,5 @@ class CutterMkEditor {
     finally {this.render(false)}
   }
 }
-window.CutterMkEditor=CutterMkEditor;
+window.SnapShackleEditor=SnapShackleEditor;
 })();

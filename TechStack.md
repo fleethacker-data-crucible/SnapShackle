@@ -43,21 +43,21 @@ Notes:
 - The beacon cannot set headers, so the server accepts the session token in the JSON body on that one route only — never in the query string, never logged.
 - A hidden PowerShell console counts: if the window is hidden or minimised, the user has no Ctrl+C.
 - To find what holds a DLL, use the Windows Restart Manager (`RmRegisterResources` + `RmGetList`); `Process.Modules` misses .NET-mapped assemblies.
-- Reference implementation: Cascade (`web/src/lib/api.ts` `startHeartbeat`, `Host/CascadeHost.cs`, `scripts/Cascade-Process.ps1`, `Stop-Cascade.ps1`, `Start-Cascade.ps1`).
+- Reference implementation: Halyard, formerly Cascade (`web/src/lib/api.ts` `startHeartbeat`; the host, process and start/stop scripts were named `Host/CascadeHost.cs`, `scripts/Cascade-Process.ps1`, `Start-Cascade.ps1` and `Stop-Cascade.ps1` before its rename).
 
-## CutterMk: how it applies
+## SnapShackle: how it applies
 
-CutterMk follows this stack with these choices and exceptions.
+SnapShackle follows this stack with these choices and exceptions.
 
-| Area | CutterMk choice | Why |
+| Area | SnapShackle choice | Why |
 | --- | --- | --- |
-| UI framework | Svelte 5 + TypeScript, bits-ui (shadcn-style) | Same as ARC, so CutterMk can reuse ARC's components |
+| UI framework | Svelte 5 + TypeScript, bits-ui (shadcn-style) | Same as Lazarette, so SnapShackle can reuse Lazarette's components |
 | Canvas editor | Framework-free TypeScript on `OffscreenCanvas` | React drives panels only, never pointer-move rendering |
-| Browser compute | `cuttermk-core` Rust crate → WASM | Stitching, GIF quantization, perceptual hashing |
-| Capture storage | PNG files under `%LOCALAPPDATA%\CutterMk\Captures` (**exception**: not IndexedDB) | Real files survive browser resets and open in any tool |
+| Browser compute | `snapshackle-core` Rust crate → WASM | Stitching, GIF quantization, perceptual hashing |
+| Capture storage | PNG files under `%LOCALAPPDATA%\SnapShackle\Captures` (**exception**: not IndexedDB) | Real files survive browser resets and open in any tool |
 | Settings | Server-side settings file (**exception**: not only `localStorage`) | Origin includes the port; a port fallback would otherwise reset settings |
 | CSP | `script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'` | Required for WASM compilation and workers |
-| Theme | ARC design tokens (`--color-*`, dark default, light via `data-theme`), Inter / Cascadia, Lucide 1.54.0 icons | One look across ARC, CutterMk and future tools |
+| Theme | Lazarette design tokens (`--color-*`, dark default, light via `data-theme`), Inter / Cascadia, Lucide 1.54.0 icons | One look across Lazarette, SnapShackle and future tools |
 | Native | C# via `Add-Type`: WinForms overlay and tray, `PrintWindow`, DWM, `RegisterHotKey` | No installer, no admin |
 
-Until the Svelte/WASM build lands (roadmap Phase 2), the studio ships as plain browser JavaScript with no build step. It already uses ARC's tokens and icons (`assets/styles.css`, `assets/icons.js`), so the port is a re-implementation, not a re-design.
+Until the Svelte/WASM build lands (roadmap Phase 2), the studio ships as plain browser JavaScript with no build step. It already uses Lazarette's tokens and icons (`assets/styles.css`, `assets/icons.js`), so the port is a re-implementation, not a re-design.
