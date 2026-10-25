@@ -3,88 +3,56 @@
    planned Svelte/Tailwind studio can use Lazarette's classes and components without renaming anything.
    Dark is the default; [data-theme=light] re-points the same tokens. */
 
-:root,
-[data-theme='dark'] {
-  --color-background: #0b0e17;
-  --color-sidebar: #0e1220;
-  --color-sidebar-active: #1d2140;
-  --color-surface: #10141f;
-  --color-surface-2: #141927;
-  --color-card: #161b2b;
-  --color-popover: #1a2033;
-  --color-muted: #1c2235;
-  --color-subtle: #232a40;
-  --color-foreground: #e8ebf7;
-  --color-muted-foreground: #949bb8;
-  --color-border: #242a3f;
-  --color-border-strong: #333b56;
-  --color-input: #2b3250;
-  --color-ring: #8b7dff;
-  --color-primary: #6d5dfc;
-  --color-primary-hover: #7d6fff;
-  --color-primary-foreground: #ffffff;
-  --color-primary-soft: rgb(109 93 252 / 0.16);
-  --color-accent: #22283d;
-  --color-sky: #56b8f8;
-  --color-destructive: #f0627a;
-  --color-destructive-soft: rgb(240 98 122 / 0.14);
-  --color-success: #3fd39b;
-  --color-success-soft: rgb(63 211 155 / 0.13);
-  --color-warning: #f2c063;
-  --color-warning-soft: rgb(242 192 99 / 0.14);
-  --color-overlay: rgb(4 6 14 / 0.72);
-  --canvas-check-a: #121726;
-  --canvas-check-b: #0f1320;
-  --shadow-pop: 0 12px 40px -8px rgb(0 0 0 / 0.45), 0 0 0 1px var(--color-border);
-  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.03) inset, 0 6px 24px -12px rgb(0 0 0 / 0.5);
-  --shadow-canvas: 0 24px 60px -24px rgb(0 0 0 / 0.7), 0 0 0 1px var(--color-border-strong);
-  color-scheme: dark;
+/* Every token points at the shared Fleet tokens (assets/vendor/fleet/fleet.css, docs/UNIFIED-UI.md),
+   loaded before this file. <html data-app="snapshackle"> sets the signal-red accent; theme.js sets
+   data-theme (Night watch / Chart room). Only the canvas checkerboard is SnapShackle's own. */
+:root {
+  --color-background: var(--fl-background);
+  --color-sidebar: var(--fl-sidebar);
+  --color-sidebar-active: var(--fl-muted);
+  --color-surface: var(--fl-surface);
+  --color-surface-2: var(--fl-surface);
+  --color-card: var(--fl-card);
+  --color-popover: var(--fl-popover);
+  --color-muted: var(--fl-muted);
+  --color-subtle: var(--fl-border);
+  --color-foreground: var(--fl-foreground);
+  --color-muted-foreground: var(--fl-muted-foreground);
+  --color-border: var(--fl-border);
+  --color-border-strong: var(--fl-border-strong);
+  --color-input: var(--fl-control-border);
+  --color-ring: var(--fl-brass);
+  --color-primary: var(--fl-accent);
+  --color-primary-hover: color-mix(in srgb, var(--fl-accent) 88%, var(--fl-foreground));
+  --color-primary-foreground: var(--fl-accent-ink);
+  --color-primary-soft: color-mix(in srgb, var(--fl-accent) 16%, transparent);
+  --color-accent: var(--fl-muted);
+  --color-sky: var(--fl-info);
+  --color-destructive: var(--fl-danger);
+  --color-destructive-soft: color-mix(in srgb, var(--fl-danger) 14%, transparent);
+  --color-success: var(--fl-success);
+  --color-success-soft: color-mix(in srgb, var(--fl-success) 14%, transparent);
+  --color-warning: var(--fl-warning);
+  --color-warning-soft: color-mix(in srgb, var(--fl-warning) 14%, transparent);
+  --color-overlay: color-mix(in srgb, var(--fl-background) 72%, transparent);
+  --shadow-pop: var(--fl-shadow), 0 0 0 1px var(--color-border);
+  --shadow-card: none;
+  --shadow-canvas: var(--fl-shadow), 0 0 0 1px var(--color-border-strong);
 }
+[data-theme='dark'] { --canvas-check-a: #0f2a3c; --canvas-check-b: #0c2433; }
+[data-theme='light'] { --canvas-check-a: #efe9d9; --canvas-check-b: #e7e0cc; }
 
-[data-theme='light'] {
-  --color-background: #f6f7fb;
-  --color-sidebar: #eef0f7;
-  --color-sidebar-active: #e2e0ff;
-  --color-surface: #ffffff;
-  --color-surface-2: #f9fafc;
-  --color-card: #ffffff;
-  --color-popover: #ffffff;
-  --color-muted: #eff1f6;
-  --color-subtle: #e6e9f2;
-  --color-foreground: #171a2b;
-  --color-muted-foreground: #5d6380;
-  --color-border: #e1e4ee;
-  --color-border-strong: #cdd2e0;
-  --color-input: #cfd4e3;
-  --color-ring: #6d5dfc;
-  --color-primary: #5b4bf0;
-  --color-primary-hover: #4d3de0;
-  --color-primary-soft: rgb(91 75 240 / 0.1);
-  --color-accent: #eceef6;
-  --color-sky: #1d8fd8;
-  --color-destructive: #d9334f;
-  --color-destructive-soft: rgb(217 51 79 / 0.1);
-  --color-success: #128a5c;
-  --color-success-soft: rgb(18 138 92 / 0.1);
-  --color-warning: #a86c00;
-  --color-warning-soft: rgb(168 108 0 / 0.12);
-  --color-overlay: rgb(20 22 40 / 0.4);
-  --canvas-check-a: #e9ecf4;
-  --canvas-check-b: #e2e6f0;
-  --shadow-pop: 0 12px 40px -12px rgb(20 22 40 / 0.25), 0 0 0 1px var(--color-border);
-  --shadow-card: 0 1px 2px rgb(20 22 40 / 0.06);
-  --shadow-canvas: 0 18px 50px -24px rgb(20 22 40 / 0.35), 0 0 0 1px var(--color-border-strong);
-  color-scheme: light;
-}
+/* Theme-specific artwork: the Night watch or Chart room version of the emblem. */
+[data-theme='light'] .only-dark, [data-theme='dark'] .only-light { display: none; }
 
 :root {
-  --font-sans: 'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'Cascadia Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, 'SFMono-Regular', ui-monospace, monospace;
+  --font-sans: var(--fl-font-body);
+  --font-mono: var(--fl-font-mono);
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --sidebar-width: 248px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --sidebar-width: 240px;
   --inspector-width: 340px;
   --ease-out: cubic-bezier(0.2, 0.9, 0.25, 1);
 }
@@ -101,10 +69,9 @@ body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-feature-settings: 'cv11', 'ss01';
   overflow: hidden;
 }
-::selection { background: rgb(109 93 252 / 0.35); }
+::selection { background: color-mix(in srgb, var(--fl-accent) 30%, transparent); }
 :focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -117,7 +84,7 @@ code, kbd, pre { font-family: var(--font-mono); font-variant-ligatures: none; }
 .icon { flex-shrink: 0; pointer-events: none; }
 
 .eyebrow {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -133,7 +100,7 @@ kbd {
   background: var(--color-muted); color: var(--color-muted-foreground);
   font-size: 10.5px; font-weight: 500; line-height: 1; white-space: nowrap;
 }
-.kbd-on-primary { margin-left: auto; background: rgb(255 255 255 / 0.14); border-color: rgb(255 255 255 / 0.28); color: #fff; }
+.kbd-on-primary { margin-left: auto; background: color-mix(in srgb, var(--color-primary-foreground) 14%, transparent); border-color: color-mix(in srgb, var(--color-primary-foreground) 35%, transparent); color: var(--color-primary-foreground); }
 
 /* ---------- Buttons (Lazarette variants) ---------- */
 .btn {
@@ -147,7 +114,7 @@ kbd {
 .btn .icon { width: 16px; height: 16px; }
 .btn-default {
   background: var(--color-primary); color: var(--color-primary-foreground);
-  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.12) inset, 0 6px 16px -8px var(--color-primary);
+  box-shadow: none;
 }
 .btn-default:hover { background: var(--color-primary-hover); }
 .btn-secondary { border-color: var(--color-border-strong); background: var(--color-muted); }
@@ -155,7 +122,7 @@ kbd {
 .btn-outline { border-color: var(--color-border-strong); }
 .btn-outline:hover { background: var(--color-muted); }
 .btn-ghost:hover { background: var(--color-muted); }
-.btn-destructive-outline { border-color: rgb(240 98 122 / 0.4); color: var(--color-destructive); }
+.btn-destructive-outline { border-color: color-mix(in srgb, var(--color-destructive) 45%, transparent); color: var(--color-destructive); }
 .btn-destructive-outline:hover { background: var(--color-destructive-soft); }
 .btn.icon-only { width: 32px; height: 32px; padding: 0; }
 .btn.icon-only.danger:hover { color: var(--color-destructive); background: var(--color-destructive-soft); }
@@ -199,13 +166,10 @@ input[type='range'] { accent-color: var(--color-primary); cursor: pointer; }
   padding: 14px 12px 12px; background: var(--color-sidebar); border-right: 1px solid var(--color-border);
   overflow-y: auto;
 }
-.brand { display: flex; align-items: center; gap: 10px; padding: 0 4px 2px; }
-.brandmark { width: 36px; height: 36px; color: var(--color-foreground); filter: drop-shadow(0 0 14px rgb(86 184 248 / 0.25)); }
-.brand-text { line-height: 1; min-width: 0; }
-.brand-name { font-size: 19px; font-weight: 800; letter-spacing: 0.04em; }
-/* "Mk" reads as an equipment designation (Mk 45, Mk 48): smaller, sky accent, tight to the name. */
-.brand-mk { margin-left: 2px; font-size: 14px; font-weight: 700; letter-spacing: 0.01em; color: var(--color-sky); }
-.brand-sub { margin-top: 4px; font-size: 8.5px; font-weight: 600; letter-spacing: 0.16em; white-space: nowrap; color: var(--color-muted-foreground); }
+/* Brand: the full emblem with its wordmark (UNIFIED-UI 5 and 8). */
+.brand { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 0 10px; border-bottom: 1px solid var(--color-border); }
+.brandEmblem { display: block; width: 184px; height: 184px; }
+.brand-sub { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; white-space: nowrap; color: var(--color-muted-foreground); }
 .side-nav { display: flex; flex-direction: column; gap: 2px; }
 .side-nav .eyebrow, .side-tools .eyebrow { margin: 6px 10px 6px; }
 .nav-item {
@@ -226,17 +190,17 @@ input[type='range'] { accent-color: var(--color-primary); cursor: pointer; }
 }
 .tool .icon { width: 16px; height: 16px; }
 .tool:hover { background: var(--color-muted); color: var(--color-foreground); }
-.tool.active { background: var(--color-sidebar-active); color: var(--color-foreground); border-color: rgb(139 125 255 / 0.35); }
+.tool.active { background: var(--color-sidebar-active); color: var(--color-foreground); border-color: color-mix(in srgb, var(--color-primary) 35%, transparent); }
 .tool.active .icon { color: var(--color-ring); }
-.tool-key { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--color-muted-foreground); opacity: 0.7; }
+.tool-key { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--color-muted-foreground); opacity: 0.7; }
 .side-footer {
   display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 9px 10px;
   border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface);
-  font-size: 11.5px; color: var(--color-muted-foreground);
+  font-size: 12px; color: var(--color-muted-foreground);
 }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); box-shadow: 0 0 0 3px var(--color-success-soft); flex-shrink: 0; }
 .side-footer-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-footer-version { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; }
+.side-footer-version { margin-left: auto; font-family: var(--font-mono); font-size: 12px; }
 
 /* Top bar */
 .topbar {
