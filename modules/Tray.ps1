@@ -3,12 +3,12 @@
   so a capture starts from the keyboard and never includes the studio window.
   After a hotkey capture the image is copied to the clipboard, saved to the library, and announced
   to the studio through /api/events.
-  Shutdown: when the host sets $Shared.Quit (tab closed, End session, Exit, Stop-Lasso.ps1, Ctrl+C)
+  Shutdown: when the host sets $Shared.Quit (tab closed, End session, Exit, Stop-CutterMk.ps1, Ctrl+C)
   a timer leaves the message loop; the finally block unregisters every hotkey on this thread (the
   thread that registered them) and disposes the NotifyIcon, which removes it from the tray, so no
   ghost icon is left behind.
 #>
-if (-not ('Lasso.HotkeyWindow' -as [type])) {
+if (-not ('CutterMk.HotkeyWindow' -as [type])) {
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -16,7 +16,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-namespace Lasso {
+namespace CutterMk {
  public sealed class HotkeyWindow : NativeWindow, IDisposable {
   [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint key);
   [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
@@ -40,14 +40,13 @@ namespace Lasso {
  }
  public static class TrayArt {
   [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
-  // A small dashed red loop with a rope tail, drawn at runtime so no icon file ships.
+  // The CutterMk mark: a dashed violet capture frame with a white cut line, drawn at runtime so no icon file ships.
   public static Icon Make(){
    using(var bmp=new Bitmap(32,32)){
     using(var g=Graphics.FromImage(bmp)){
      g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Color.Transparent);
-     using(var loop=new Pen(Color.FromArgb(139,125,255),3.4f)){loop.DashPattern=new float[]{2.2f,1.2f};g.DrawEllipse(loop,4,3,24,16);}
-     using(var rope=new Pen(Color.FromArgb(235,235,240),2.6f)){rope.StartCap=LineCap.Round;rope.EndCap=LineCap.Round;g.DrawBezier(rope,11,18,6,25,13,29,18,30);}
-     using(var knot=new SolidBrush(Color.FromArgb(86,184,248)))g.FillEllipse(knot,9,16,5,5);
+     using(var frame=new Pen(Color.FromArgb(139,125,255),3f)){frame.DashPattern=new float[]{2.2f,1.3f};g.DrawRectangle(frame,4,6,24,19);}
+     using(var cut=new Pen(Color.FromArgb(240,242,250),3f)){cut.StartCap=LineCap.Round;cut.EndCap=LineCap.Round;g.DrawLine(cut,6,29,27,6);g.DrawLine(cut,21,6,27,6);g.DrawLine(cut,27,6,27,12);}
     }
     IntPtr h=bmp.GetHicon();
     try{using(var tmp=Icon.FromHandle(h))return (Icon)tmp.Clone();}finally{DestroyIcon(h);}
@@ -60,13 +59,13 @@ namespace Lasso {
 
 # One entry per action: the preferred chord, then a fallback if another app (or Windows'
 # Print Screen -> Snipping Tool setting) already owns it.
-$script:LassoHotkeyPlan = @(
+$script:CutterMkHotkeyPlan = @(
     @{ Id = 1; Action = 'region'; Chords = @(@{ Mods = 0; Key = 0x2C; Label = 'PrtScn' }, @{ Mods = 3; Key = 0x53; Label = 'Ctrl+Alt+S' }) },
     @{ Id = 2; Action = 'window'; Chords = @(@{ Mods = 1; Key = 0x2C; Label = 'Alt+PrtScn' }, @{ Mods = 3; Key = 0x57; Label = 'Ctrl+Alt+W' }) },
     @{ Id = 3; Action = 'screen'; Chords = @(@{ Mods = 4; Key = 0x2C; Label = 'Shift+PrtScn' }, @{ Mods = 3; Key = 0x46; Label = 'Ctrl+Alt+F' }) }
 )
 
-$script:LassoTrayScript = {
+$script:CutterMkTrayScript = {
     param($Root, $Library, $Shared, $Plan)
     $ErrorActionPreference = 'Stop'
     try {
@@ -78,9 +77,9 @@ $script:LassoTrayScript = {
         . (Join-Path $Root 'modules/Tray.ps1')
 
         $tray = [Windows.Forms.NotifyIcon]::new()
-        $tray.Icon = [Lasso.TrayArt]::Make()
-        $tray.Text = 'Lasso'
-        $hotkeys = [Lasso.HotkeyWindow]::new()
+        $tray.Icon = [CutterMk.TrayArt]::Make()
+        $tray.Text = 'CutterMk'
+        $hotkeys = [CutterMk.HotkeyWindow]::new()
         $labels = @{}
         foreach ($entry in $Plan) {
             foreach ($chord in $entry.Chords) {
@@ -97,7 +96,7 @@ $script:LassoTrayScript = {
             while ($Shared.Events.Count -gt 50) { $Shared.Events.RemoveAt(0) }
         }
         $openStudio = {
-            if (-not [Lasso.Native]::ActivateByTitle('Lasso Studio')) {
+            if (-not [CutterMk.Native]::ActivateByTitle('CutterMk Studio')) {
                 $url = $Shared.BaseUrl
                 if ($Shared.LastName) { $url += '#open=' + $Shared.LastName }
                 Start-Process $url
@@ -110,12 +109,12 @@ $script:LassoTrayScript = {
             try {
                 $png = $null
                 switch ($Action) {
-                    'region' { $png = Get-LassoRegion }
-                    'window' { $png = Get-LassoWindowCapture ([Lasso.Native]::Foreground()) }
-                    'screen' { $png = Get-LassoRect ([Windows.Forms.Screen]::FromPoint([Windows.Forms.Control]::MousePosition).Bounds) }
+                    'region' { $png = Get-CutterMkRegion }
+                    'window' { $png = Get-CutterMkWindowCapture ([CutterMk.Native]::Foreground()) }
+                    'screen' { $png = Get-CutterMkRect ([Windows.Forms.Screen]::FromPoint([Windows.Forms.Control]::MousePosition).Bounds) }
                 }
                 if ($null -eq $png) { return }
-                $name = Save-LassoCapture $Library $png
+                $name = Save-CutterMkCapture $Library $png
                 $Shared.LastName = $name
                 $stream = [IO.MemoryStream]::new($png, $false)
                 $image = [Drawing.Image]::FromStream($stream)
@@ -127,12 +126,12 @@ $script:LassoTrayScript = {
                     [Windows.Forms.Clipboard]::SetDataObject($data, $true)
                 } finally { $image.Dispose(); $stream.Dispose() }
                 & $addEvent 'capture' @{ name = $name; source = $Action }
-                $tray.ShowBalloonTip(2500, 'Copied to clipboard', 'Saved to your Lasso library. Click to edit.', [Windows.Forms.ToolTipIcon]::None)
+                $tray.ShowBalloonTip(2500, 'Copied to clipboard', 'Saved to your CutterMk library. Click to edit.', [Windows.Forms.ToolTipIcon]::None)
                 # Index the text in the image for library search (this thread, so the server never waits).
-                $null = Update-LassoOcrIndex $Library $name $png
+                $null = Update-CutterMkOcrIndex $Library $name $png
             } catch {
                 $Shared.LastError = $_.Exception.Message
-                $tray.ShowBalloonTip(4000, 'Lasso could not capture', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Warning)
+                $tray.ShowBalloonTip(4000, 'CutterMk could not capture', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Warning)
             } finally { $Shared.Busy = $false }
         }
 
@@ -167,8 +166,8 @@ $script:LassoTrayScript = {
         $Shared.TrayIcon = $tray
         $Shared.TrayReady = $true
         if ($Shared.Stay) {
-            $tray.Text = 'Lasso (stays in the tray; right-click to exit)'
-            $tray.ShowBalloonTip(3000, 'Lasso is in the tray', 'Hotkeys stay on after the studio closes. Right-click this icon and choose Exit to stop Lasso.', [Windows.Forms.ToolTipIcon]::None)
+            $tray.Text = 'CutterMk (stays in the tray; right-click to exit)'
+            $tray.ShowBalloonTip(3000, 'CutterMk is in the tray', 'Hotkeys stay on after the studio closes. Right-click this icon and choose Exit to stop CutterMk.', [Windows.Forms.ToolTipIcon]::None)
         }
         [Windows.Forms.Application]::Run()
     } catch {
@@ -184,20 +183,20 @@ $script:LassoTrayScript = {
     }
 }
 
-# Starts the tray thread. Returns a handle for Stop-LassoTray.
-function Start-LassoTray([string]$Root, [string]$Library, $Shared) {
+# Starts the tray thread. Returns a handle for Stop-CutterMkTray.
+function Start-CutterMkTray([string]$Root, [string]$Library, $Shared) {
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.ApartmentState = 'STA'
     $runspace.ThreadOptions = 'ReuseThread'
     $runspace.Open()
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($script:LassoTrayScript).AddArgument($Root).AddArgument($Library).AddArgument($Shared).AddArgument($script:LassoHotkeyPlan)
+    [void]$ps.AddScript($script:CutterMkTrayScript).AddArgument($Root).AddArgument($Library).AddArgument($Shared).AddArgument($script:CutterMkHotkeyPlan)
     $async = $ps.BeginInvoke()
     return @{ PowerShell = $ps; Runspace = $runspace; Async = $async }
 }
 # Returns $true when the tray thread finished cleanly, $false when it had to be abandoned.
-function Stop-LassoTray($Handle, $Shared) {
+function Stop-CutterMkTray($Handle, $Shared) {
     if ($null -eq $Handle) { return $true }
     $Shared.Quit = $true
     # The tray thread leaves its message loop on the next timer tick (400 ms), then cleans up itself.
