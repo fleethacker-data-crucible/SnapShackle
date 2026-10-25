@@ -17,13 +17,13 @@ $root = Split-Path -Parent $PSScriptRoot
 # The host rejects Expect: 100-continue, which Windows PowerShell adds to POSTs by default.
 # Set before the first request: each host's ServicePoint copies the flag when it is created.
 [Net.ServicePointManager]::Expect100Continue = $false
-$hostScript = Join-Path $root 'Start-CutterMk.ps1'
+$hostScript = Join-Path $root 'Start-SnapShackle.ps1'
 $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $sentinel = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0)
 $sentinel.Start()
 $occupiedPort = ([Net.IPEndPoint]$sentinel.LocalEndpoint).Port
-$outFile = Join-Path $env:TEMP ('CutterMk-stdout-' + [guid]::NewGuid().ToString('N') + '.txt')
-$errFile = Join-Path $env:TEMP ('CutterMk-stderr-' + [guid]::NewGuid().ToString('N') + '.txt')
+$outFile = Join-Path $env:TEMP ('SnapShackle-stdout-' + [guid]::NewGuid().ToString('N') + '.txt')
+$errFile = Join-Path $env:TEMP ('SnapShackle-stderr-' + [guid]::NewGuid().ToString('N') + '.txt')
 $child = $null
 # The host still has its redirected output open for writing, so read with shared access.
 function Read-SharedText([string]$Path) {
@@ -44,22 +44,22 @@ try {
         if ($child.HasExited) { throw ('Host exited unexpectedly: ' + (Read-SharedText $errFile)) }
     }
     if (-not $url) { throw ('Host did not announce its URL. Errors: ' + (Read-SharedText $errFile)) }
-    if ($url -eq ('http://127.0.0.1:' + $occupiedPort + '/')) { throw 'CutterMk attempted to reuse an occupied port' }
+    if ($url -eq ('http://127.0.0.1:' + $occupiedPort + '/')) { throw 'SnapShackle attempted to reuse an occupied port' }
     if (-not $sentinel.Server.IsBound) { throw 'Existing server was disrupted' }
     $page = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 10
-    if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'LAS') { throw 'Studio HTML did not load' }
+    if ($page.StatusCode -ne 200 -or $page.Content -notmatch 'SnapShackle Studio') { throw 'Studio HTML did not load' }
     try {
         $response=Invoke-WebRequest -UseBasicParsing -Uri ($url + 'api/health') -TimeoutSec 5
         throw 'Unauthenticated health route should return 403'
     } catch [System.Net.WebException] {
         if ([int]$_.Exception.Response.StatusCode -ne 403) { throw }
     }
-    Write-Host ('PASS: preferred port ' + $occupiedPort + ' occupied, CutterMk safely selected ' + $url)
+    Write-Host ('PASS: preferred port ' + $occupiedPort + ' occupied, SnapShackle safely selected ' + $url)
     Write-Host 'PASS: studio HTML served; API authentication enforced; existing listener retained'
 
     # Lifecycle, end to end: runtime file, heartbeat auth, and auto-stop after the tab's leaving signal.
-    $logs = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'CutterMk\logs' } else { Join-Path $root 'logs' }
-    $runtimeFile = Join-Path $logs ('cuttermk-server-' + $child.Id + '.json')
+    $logs = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle\logs' } else { Join-Path $root 'logs' }
+    $runtimeFile = Join-Path $logs ('snapshackle-server-' + $child.Id + '.json')
     if (-not (Test-Path -LiteralPath $runtimeFile)) { throw ('Runtime file missing: ' + $runtimeFile) }
     $runtime = Get-Content -LiteralPath $runtimeFile -Raw
     $info = $runtime | ConvertFrom-Json
@@ -73,11 +73,11 @@ try {
     }
     if ((Send-Beat '{"tab":"smoke"}') -ne 403) { throw 'Heartbeat without a token was accepted' }
     if ((Send-Beat '{"tab":"smoke"}' @{} ('?session=' + $token)) -ne 403) { throw 'Heartbeat accepted a token in the query string' }
-    if ((Send-Beat '{"tab":"smoke","leaving":false}' @{ 'X-CutterMk-Token' = $token }) -ne 200) { throw 'Heartbeat with the header token was refused' }
+    if ((Send-Beat '{"tab":"smoke","leaving":false}' @{ 'X-SnapShackle-Token' = $token }) -ne 200) { throw 'Heartbeat with the header token was refused' }
     # The beacon form: token in the body, no header.
     if ((Send-Beat ('{"tab":"smoke","leaving":true,"session":"' + $token + '"}')) -ne 200) { throw 'Leaving beacon with the body token was refused' }
-    if (-not $child.WaitForExit(15000)) { throw 'CutterMk kept running after the studio tab left' }
-    if (Test-Path -LiteralPath $runtimeFile) { throw 'Runtime file was not removed when CutterMk stopped' }
+    if (-not $child.WaitForExit(15000)) { throw 'SnapShackle kept running after the studio tab left' }
+    if (Test-Path -LiteralPath $runtimeFile) { throw 'Runtime file was not removed when SnapShackle stopped' }
     Write-Host 'PASS: runtime file without token; heartbeat auth (header or beacon body, never query); auto-stop after the leaving signal'
 } finally {
     if ($child) { try { if (-not $child.HasExited) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue } } catch {} }
