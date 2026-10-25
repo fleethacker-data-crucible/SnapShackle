@@ -13,12 +13,12 @@ function apply(value) {
   document.documentElement.dataset.themeChoice = choice;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = theme === 'light' ? '#f6f7fb' : '#0b0e17';
-  try { localStorage.setItem('lasso-theme', choice); } catch {}
+  try { localStorage.setItem('cuttermk-theme', choice); } catch {}
   return theme;
 }
 let saved = 'dark';
-try { saved = localStorage.getItem('lasso-theme') || 'dark'; } catch {}
+try { saved = localStorage.getItem('cuttermk-theme') || localStorage.getItem('lasso-theme') || 'dark'; } catch {}
 apply(saved);
 if (media && media.addEventListener) media.addEventListener('change', () => { if (choice === 'system') apply('system'); });
-window.LassoTheme = { apply, get choice() { return choice; }, get theme() { return resolve(choice); } };
+window.CutterMkTheme = { apply, get choice() { return choice; }, get theme() { return resolve(choice); } };
 })();

@@ -1,10 +1,10 @@
 <#
-  Lasso loopback-only HTTP adapter. Uses TcpListener instead of HttpListener,
+  CutterMk loopback-only HTTP adapter. Uses TcpListener instead of HttpListener,
   so ordinary users do not need a Windows HTTP.sys URL ACL reservation.
   One request per connection, Connection: close, no chunked transfer encoding.
   Body and header limits are enforced before handing requests to the app.
 #>
-if (-not ('Lasso.Transport.Server' -as [type])) {
+if (-not ('CutterMk.Transport.Server' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.IO;
@@ -14,7 +14,7 @@ using System.Net.Sockets;
 using System.Collections.Specialized;
 using System.Globalization;
 
-namespace Lasso.Transport {
+namespace CutterMk.Transport {
     public sealed class Server : IDisposable {
         public readonly TcpListener Listener;
         public int Port { get { return ((IPEndPoint)Listener.LocalEndpoint).Port; } }

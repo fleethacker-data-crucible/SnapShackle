@@ -1,7 +1,7 @@
 # Windows native services. Loaded only on Windows; no installation or administrator rights required.
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-if (-not ('Lasso.Native' -as [type])) {
+if (-not ('CutterMk.Native' -as [type])) {
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
 using System.Text;
@@ -11,7 +11,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Windows.Forms;
-namespace Lasso {
+namespace CutterMk {
  public struct RECT { public int Left,Top,Right,Bottom; public int Width {get{return Right-Left;}} public int Height {get{return Bottom-Top;}} }
  public struct POINT { public int X,Y; }
  public static class Native {
@@ -217,26 +217,26 @@ namespace Lasso {
 }
 '@
 }
-$script:LassoDpiMode = try { [Lasso.Native]::EnableDpiAwareness() } catch { 'unknown' }
-function Get-LassoWindows { @([Lasso.Native]::Windows() | Select-Object -First 250) }
+$script:CutterMkDpiMode = try { [CutterMk.Native]::EnableDpiAwareness() } catch { 'unknown' }
+function Get-CutterMkWindows { @([CutterMk.Native]::Windows() | Select-Object -First 250) }
 # Timings describe capture/encoding only. Region selection time is recorded separately.
-$script:LassoCaptureStats = @{ acquireMs=0; encodeMs=0; selectionMs=0 }
-function Convert-LassoBitmapToPng([Drawing.Bitmap]$Bitmap, [double]$AcquisitionMs=0, [double]$SelectionMs=0) {
+$script:CutterMkCaptureStats = @{ acquireMs=0; encodeMs=0; selectionMs=0 }
+function Convert-CutterMkBitmapToPng([Drawing.Bitmap]$Bitmap, [double]$AcquisitionMs=0, [double]$SelectionMs=0) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     $memory=[IO.MemoryStream]::new()
     try {
         $Bitmap.Save($memory,[Drawing.Imaging.ImageFormat]::Png)
         $result=$memory.ToArray()
         $timer.Stop()
-        $script:LassoCaptureStats=@{ acquireMs=[math]::Round($AcquisitionMs,1); encodeMs=[math]::Round($timer.Elapsed.TotalMilliseconds,1); selectionMs=[math]::Round($SelectionMs,1) }
+        $script:CutterMkCaptureStats=@{ acquireMs=[math]::Round($AcquisitionMs,1); encodeMs=[math]::Round($timer.Elapsed.TotalMilliseconds,1); selectionMs=[math]::Round($SelectionMs,1) }
         return ,$result
     } finally { $memory.Dispose() }
 }
 # Waits before capturing so menus and hover states can be opened. Bounded to 0-10 seconds.
-function Wait-LassoDelay([int]$Seconds) {
+function Wait-CutterMkDelay([int]$Seconds) {
     if ($Seconds -gt 0) { Start-Sleep -Seconds ([Math]::Min(10, $Seconds)) }
 }
-function Get-LassoRect([Drawing.Rectangle]$rect) {
+function Get-CutterMkRect([Drawing.Rectangle]$rect) {
     if ($rect.Width -le 0 -or $rect.Height -le 0 -or ([long]$rect.Width * $rect.Height) -gt 120000000) {
         throw 'Invalid capture dimensions'
     }
@@ -246,21 +246,21 @@ function Get-LassoRect([Drawing.Rectangle]$rect) {
         $timer=[Diagnostics.Stopwatch]::StartNew()
         $gfx.CopyFromScreen($rect.Left,$rect.Top,0,0,$bmp.Size,[Drawing.CopyPixelOperation]::SourceCopy)
         $timer.Stop()
-        return Convert-LassoBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
+        return Convert-CutterMkBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
     } finally { $gfx.Dispose();$bmp.Dispose() }
 }
-# Window capture that ignores whatever covers the window (including the Lasso studio itself).
-function Get-LassoWindowCapture([long]$Id) {
+# Window capture that ignores whatever covers the window (including the CutterMk studio itself).
+function Get-CutterMkWindowCapture([long]$Id) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
     $method=$null
-    $bmp=[Lasso.Native]::CaptureWindow($Id,[ref]$method)
+    $bmp=[CutterMk.Native]::CaptureWindow($Id,[ref]$method)
     $timer.Stop()
     try {
-        $script:LassoLastWindowMethod=$method
-        return Convert-LassoBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
+        $script:CutterMkLastWindowMethod=$method
+        return Convert-CutterMkBitmapToPng $bmp $timer.Elapsed.TotalMilliseconds
     } finally { $bmp.Dispose() }
 }
-function Copy-LassoBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area) {
+function Copy-CutterMkBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area) {
     if ($Area.Width -le 0 -or $Area.Height -le 0 -or ([long]$Area.Width*$Area.Height) -gt 120000000 -or
         $Area.X -lt 0 -or $Area.Y -lt 0 -or $Area.Right -gt $Original.Width -or $Area.Bottom -gt $Original.Height) {
         throw 'Selection outside captured image'
@@ -268,11 +268,11 @@ function Copy-LassoBitmapArea([Drawing.Bitmap]$Original,[Drawing.Rectangle]$Area
     # GDI+ rectangle clone is a lossless pixel copy and avoids resampling.
     return $Original.Clone($Area,$Original.PixelFormat)
 }
-function Get-LassoRegion {
+function Get-CutterMkRegion {
     $virtual=[Windows.Forms.SystemInformation]::VirtualScreen
     if ($virtual.Width -le 0 -or $virtual.Height -le 0 -or ([long]$virtual.Width*$virtual.Height) -gt 120000000) { throw 'Desktop exceeds capture limits' }
     # Window frames are read before the freeze, so hover snapping matches what is on screen.
-    $snaps=[Lasso.Native]::SnapRects()
+    $snaps=[CutterMk.Native]::SnapRects()
     $background=[Drawing.Bitmap]::new($virtual.Width,$virtual.Height)
     $gfx=[Drawing.Graphics]::FromImage($background)
     try {
@@ -282,7 +282,7 @@ function Get-LassoRegion {
         $acquireMs=$timer.Elapsed.TotalMilliseconds
     } finally { $gfx.Dispose() }
     try {
-        $overlay=[Lasso.RegionOverlay]::new($virtual,$background,$snaps)
+        $overlay=[CutterMk.RegionOverlay]::new($virtual,$background,$snaps)
         $timer=[Diagnostics.Stopwatch]::StartNew()
         try {
             # Do not re-capture the display after selection. Crop the original snapshot;
@@ -291,8 +291,8 @@ function Get-LassoRegion {
             $selected=$overlay.Selection
         } finally { $timer.Stop();$overlay.Dispose() }
         $region=[Drawing.Rectangle]::new($selected.X-$virtual.Left,$selected.Y-$virtual.Top,$selected.Width,$selected.Height)
-        $cropped=Copy-LassoBitmapArea $background $region
-        try { return Convert-LassoBitmapToPng $cropped $acquireMs $timer.Elapsed.TotalMilliseconds }
+        $cropped=Copy-CutterMkBitmapArea $background $region
+        try { return Convert-CutterMkBitmapToPng $cropped $acquireMs $timer.Elapsed.TotalMilliseconds }
         finally { $cropped.Dispose() }
     } finally { $background.Dispose() }
 }
