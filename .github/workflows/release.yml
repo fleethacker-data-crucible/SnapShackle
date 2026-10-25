@@ -22,7 +22,9 @@ jobs:
           New-Item -ItemType Directory $stage | Out-Null
           # Runtime only: no tests, dev launcher, CI config or docs images. assets/brand holds the
           # README emblems; the app never loads them, so they stay out of the zip.
-          foreach ($item in 'Launch-SnapShackle.bat','Start-SnapShackle.ps1','Stop-SnapShackle.ps1','VERSION','index.html','README.md','assets','modules') {
+          # CutterMk.bat forwards to Launch-SnapShackle.bat, so shortcuts made before the rename (and a
+          # zip unpacked over a CutterMk folder) start the new host instead of the old Start-CutterMk.ps1.
+          foreach ($item in 'Launch-SnapShackle.bat','CutterMk.bat','Start-SnapShackle.ps1','Stop-SnapShackle.ps1','VERSION','index.html','README.md','assets','modules') {
             Copy-Item $item -Destination $stage -Recurse
           }
           $brand = Join-Path $stage 'assets\brand'
