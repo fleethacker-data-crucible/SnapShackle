@@ -51,12 +51,13 @@ Lasso follows this stack with these choices and exceptions.
 
 | Area | Lasso choice | Why |
 | --- | --- | --- |
-| UI framework | React 19 + TypeScript | Radix (shadcn-style) is React-only; shares components with ARC |
+| UI framework | Svelte 5 + TypeScript, bits-ui (shadcn-style) | Same as ARC, so Lasso can reuse ARC's components |
 | Canvas editor | Framework-free TypeScript on `OffscreenCanvas` | React drives panels only, never pointer-move rendering |
 | Browser compute | `lasso-core` Rust crate → WASM | Stitching, GIF quantization, perceptual hashing |
 | Capture storage | PNG files under `%LOCALAPPDATA%\Lasso\Captures` (**exception**: not IndexedDB) | Real files survive browser resets and open in any tool |
 | Settings | Server-side settings file (**exception**: not only `localStorage`) | Origin includes the port; a port fallback would otherwise reset settings |
 | CSP | `script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'` | Required for WASM compilation and workers |
+| Theme | ARC design tokens (`--color-*`, dark default, light via `data-theme`), Inter / Cascadia, Lucide 1.54.0 icons | One look across ARC, Lasso and future tools |
 | Native | C# via `Add-Type`: WinForms overlay and tray, `PrintWindow`, DWM, `RegisterHotKey` | No installer, no admin |
 
-Until the React/WASM build lands (roadmap Phase 2), the studio ships as plain browser JavaScript with no build step.
+Until the Svelte/WASM build lands (roadmap Phase 2), the studio ships as plain browser JavaScript with no build step. It already uses ARC's tokens and icons (`assets/styles.css`, `assets/icons.js`), so the port is a re-implementation, not a re-design.
