@@ -45,19 +45,19 @@ Notes:
 - To find what holds a DLL, use the Windows Restart Manager (`RmRegisterResources` + `RmGetList`); `Process.Modules` misses .NET-mapped assemblies.
 - Reference implementation: Cascade (`web/src/lib/api.ts` `startHeartbeat`, `Host/CascadeHost.cs`, `scripts/Cascade-Process.ps1`, `Stop-Cascade.ps1`, `Start-Cascade.ps1`).
 
-## Lasso: how it applies
+## CutterMk: how it applies
 
-Lasso follows this stack with these choices and exceptions.
+CutterMk follows this stack with these choices and exceptions.
 
-| Area | Lasso choice | Why |
+| Area | CutterMk choice | Why |
 | --- | --- | --- |
-| UI framework | Svelte 5 + TypeScript, bits-ui (shadcn-style) | Same as ARC, so Lasso can reuse ARC's components |
+| UI framework | Svelte 5 + TypeScript, bits-ui (shadcn-style) | Same as ARC, so CutterMk can reuse ARC's components |
 | Canvas editor | Framework-free TypeScript on `OffscreenCanvas` | React drives panels only, never pointer-move rendering |
-| Browser compute | `lasso-core` Rust crate → WASM | Stitching, GIF quantization, perceptual hashing |
-| Capture storage | PNG files under `%LOCALAPPDATA%\Lasso\Captures` (**exception**: not IndexedDB) | Real files survive browser resets and open in any tool |
+| Browser compute | `cuttermk-core` Rust crate → WASM | Stitching, GIF quantization, perceptual hashing |
+| Capture storage | PNG files under `%LOCALAPPDATA%\CutterMk\Captures` (**exception**: not IndexedDB) | Real files survive browser resets and open in any tool |
 | Settings | Server-side settings file (**exception**: not only `localStorage`) | Origin includes the port; a port fallback would otherwise reset settings |
 | CSP | `script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'` | Required for WASM compilation and workers |
-| Theme | ARC design tokens (`--color-*`, dark default, light via `data-theme`), Inter / Cascadia, Lucide 1.54.0 icons | One look across ARC, Lasso and future tools |
+| Theme | ARC design tokens (`--color-*`, dark default, light via `data-theme`), Inter / Cascadia, Lucide 1.54.0 icons | One look across ARC, CutterMk and future tools |
 | Native | C# via `Add-Type`: WinForms overlay and tray, `PrintWindow`, DWM, `RegisterHotKey` | No installer, no admin |
 
 Until the Svelte/WASM build lands (roadmap Phase 2), the studio ships as plain browser JavaScript with no build step. It already uses ARC's tokens and icons (`assets/styles.css`, `assets/icons.js`), so the port is a re-implementation, not a re-design.
