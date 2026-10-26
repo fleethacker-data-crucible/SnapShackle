@@ -10,7 +10,7 @@ CASES = r'''()=>{
   // Words laid out left to right, 10px per character plus a 6px gap, on one line per row.
   function line(row,...texts){let x=10;const words=texts.map(t=>{const w={text:t,x,y:20+row*30,w:t.length*10,h:18};x+=w.w+6;return w});return {text:texts.join(' '),words}}
   const lines=[
-    line(0,'Contact','j.smith@navy.mil','today'),
+    line(0,'Contact','j.smith@corp.org','today'),
     line(1,'SSN','123-45-6789'),
     line(2,'Call','(757)','555-0142','now'),
     line(3,'EDIPI','1234567890'),
@@ -20,7 +20,7 @@ CASES = r'''()=>{
     line(6,'bad','999.1.1.1','4111','1111','1111','1112','2026-10-24','12345678901'),
   ];
   const found=SnapShackleRedact.detect(lines,{pad:0});
-  const term=SnapShackleRedact.findText([line(0,'Project','NAUTILUS','and','project','nautilus','Docs')],'project nautilus',{pad:0});
+  const term=SnapShackleRedact.findText([line(0,'Project','STARLING','and','project','starling','Docs')],'project starling',{pad:0});
   const detector=SnapShackleRedact.detect(SnapShackleRedact.fromTextDetector([{rawValue:'mail a@b.co',boundingBox:{x:5,y:6,width:100,height:12}}]),{pad:0});
   return {found:found.map(f=>({kind:f.kind,text:f.text,box:f.box})),term:term.map(t=>t.box),detector:detector.map(d=>d.box)};
 }'''
@@ -37,7 +37,7 @@ kinds = {f['kind']: f for f in data['found']}
 print(data['found'])
 assert sorted(kinds) == ['card', 'dodid', 'email', 'ip', 'phone', 'ssn'], sorted(kinds)
 assert len(data['found']) == 6, 'false positives: ' + repr([f for f in data['found'] if f['box']['y'] >= 200])
-assert kinds['email']['text'] == 'j.smith@navy.mil'
+assert kinds['email']['text'] == 'j.smith@corp.org'
 # The phone spans two OCR words; its box must cover both.
 phone = kinds['phone']['box']
 assert phone['x'] == 56 and phone['x2'] == 56 + 50 + 6 + 80, phone
