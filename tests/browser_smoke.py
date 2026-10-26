@@ -31,7 +31,7 @@ MOCK = r"""(imageBase64) => {
     if(url.startsWith('/api/thumb/SnapShackle-')){window.__thumbRequests=(window.__thumbRequests||0)+1;return new Response(bytes,{status:200,headers:{'Content-Type':'image/jpeg'}})}
     if(url.startsWith('/api/library/SnapShackle-'))return new Response(window.__library||bytes,{status:200,headers:{'Content-Type':'image/png'}});
     if(url.startsWith('/api/library')&&(!options.method||options.method==='GET'))return json({items:window.__library?[{name:'SnapShackle-Mock.png',tags:[],note:'',modified:'2026-10-21T00:00:00'}]:[]});
-    if(url.startsWith('/api/ocr'))return json({text:'Contact j.smith@navy.mil or 757-555-0142 Nautilus',engine:'mock',lines:[{text:'Contact j.smith@navy.mil or 757-555-0142',words:[{text:'Contact',x:60,y:100,w:70,h:20},{text:'j.smith@navy.mil',x:140,y:100,w:160,h:20},{text:'or',x:310,y:100,w:20,h:20},{text:'757-555-0142',x:340,y:100,w:120,h:20}]},{text:'Nautilus',words:[{text:'Nautilus',x:60,y:200,w:80,h:20}]}]});
+    if(url.startsWith('/api/ocr'))return json({text:'Contact j.smith@corp.org or 757-555-0142 Starling',engine:'mock',lines:[{text:'Contact j.smith@corp.org or 757-555-0142',words:[{text:'Contact',x:60,y:100,w:70,h:20},{text:'j.smith@corp.org',x:140,y:100,w:160,h:20},{text:'or',x:310,y:100,w:20,h:20},{text:'757-555-0142',x:340,y:100,w:120,h:20}]},{text:'Starling',words:[{text:'Starling',x:60,y:200,w:80,h:20}]}]});
     if(url.startsWith('/api/settings')){if(options.method==='PUT'){window.__settings=JSON.parse(options.body);return json({...window.__settings,saved:true})}return json(window.__settings?{...window.__settings,saved:true}:{namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,saved:false})}
     if(url.startsWith('/api/heartbeat')){const b=JSON.parse(options.body||'{}');(window.__beats=window.__beats||[]).push({...b,token:(options.headers||{})['X-SnapShackle-Token']});return json({autoStop:true,timeoutSeconds:20})}
     if(url.startsWith('/api/session/stop')){window.__stopIntent=(options.headers||{})['X-SnapShackle-Intent'];return json({stopped:true})}
@@ -157,7 +157,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(50)
     assert page.locator('#layers button').count() == before, 'undo did not remove both redactions in one step'
     page.locator('#tabWorkflows').click()
-    page.locator('#redactTerm').fill('nautilus')
+    page.locator('#redactTerm').fill('starling')
     page.locator('#redactTermApply').click()
     page.wait_for_function('document.querySelector("#status").textContent.includes("Redacted 1 instance")', timeout=6000)
     # Drag-to-crop keeps every annotation and moves them with the image.
@@ -175,7 +175,7 @@ with sync_playwright() as p:
     w, h = page.evaluate("[document.querySelector('#canvas').width, document.querySelector('#canvas').height]")
     assert abs(w-400) <= 3 and abs(h-300) <= 3, f'crop size {w}x{h}'
     assert page.locator('#layers button').count() == layers_before, 'crop dropped annotations'
-    # The "Nautilus" redaction drawn at (60..140, 200..220) moved with the crop to about (10..90, 110..130).
+    # The "Starling" redaction drawn at (60..140, 200..220) moved with the crop to about (10..90, 110..130).
     moved = page.evaluate("Array.from(document.querySelector('#canvas').getContext('2d').getImageData(50,120,1,1).data.slice(0,3))")
     assert moved == [11, 11, 13], f'annotation did not move with the crop: {moved}'
     page.locator('#undo').click()

@@ -14,7 +14,7 @@ A **snap shackle** is a quick-release sailing shackle: it clips on in a moment a
 
 ![SnapShackle Studio, dark theme](docs/studio-preview.png)
 
-## Run on Windows (Nautilus-friendly launch pattern)
+## Run on Windows (managed-workstation-friendly launch pattern)
 
 1. Extract **the entire archive**, retaining `assets/`, `modules/`, and `tests/`.
 2. Double-click **`Launch-SnapShackle.bat`** to launch the GUI. This is the **only batch launcher**; `Start-SnapShackle.ps1` is the direct PowerShell/terminal entry point.
@@ -114,7 +114,7 @@ Captures live under `%LOCALAPPDATA%\SnapShackle\Captures`. On first start, when 
 
 After a capture, the bottom status bar and **Workflows → Diagnostics** show a per-stage timing breakdown. `native` measures Windows screen acquisition, `PNG` measures encoding, `request/transfer` includes the server processing and transmission, and `browser display` measures image decoding and first editor render. For region selection, total request time necessarily includes **the time spent dragging the selection**; that user interaction is shown separately.
 
-**No precise speedup percentage is claimed:** only browser integration tests ran in the build environment. GDI capture and socket performance must be measured on Windows / Nautilus. Run `tests/windows_capture_perf.ps1 -DesktopCapture` in an authorized PowerShell 5.1 STA session to benchmark the native stages.
+**No precise speedup percentage is claimed:** only browser integration tests ran in the build environment. GDI capture and socket performance must be measured on a Windows managed workstation. Run `tests/windows_capture_perf.ps1 -DesktopCapture` in an authorized PowerShell 5.1 STA session to benchmark the native stages.
 
 ## Implemented functionality
 
@@ -161,7 +161,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
-Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR integrations, or enterprise Nautilus compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
+Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR integrations, or enterprise managed-workstation compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
 
 ## Project structure
 
