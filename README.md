@@ -17,7 +17,11 @@ A **snap shackle** is a quick-release sailing shackle: it clips on in a moment a
 
 **Status:** An expanding prototype with a tested browser editor; **not production-hardened or feature-complete**. A genuine Windows desktop run and security review are required before use with sensitive work data.
 
-![SnapShackle Studio, dark theme](docs/studio-preview.png)
+| Night watch (dark) | Chart room (light) |
+| --- | --- |
+| ![SnapShackle Studio in the Night watch theme](docs/screenshots/studio-night-watch.png) | ![SnapShackle Studio in the Chart room theme](docs/screenshots/studio-chart-room.png) |
+
+The screenshots show an invented demo window, not a real capture. Retake them with `node docs/screenshots/capture-studio.js`.
 
 ## Run on Windows (managed-workstation-friendly launch pattern)
 
@@ -81,8 +85,6 @@ Captures live under `%LOCALAPPDATA%\SnapShackle\Captures`. On first start, when 
 - **Light and dark themes** like Lazarette: dark by default, a sun/moon button in the top bar, and **Workflows → Settings → Theme** offers Dark, Light or Match Windows. The choice is saved by the host.
 - **Single-key tool shortcuts** shown beside each tool: `V` select, `A` arrow, `R` rectangle, `E` ellipse, `L` line, `P` pen, `H` highlight, `T` text, `N` steps, `C` crop, `X` redact, `Q` pixelate, `B` blur. They are ignored while you type in a field.
 - The native selection overlay and the tray icon use the same violet and sky accents.
-
-![SnapShackle Studio, light theme](docs/studio-preview-light.png)
 
 ## Smart redaction and searchable library (v0.10)
 
