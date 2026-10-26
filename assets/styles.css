@@ -341,7 +341,7 @@ dialog p { color: var(--color-muted-foreground); font-size: 13px; }
 .session-ended { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: var(--color-background); }
 .session-ended div { max-width: 60ch; padding: 28px 30px; border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-card); box-shadow: var(--shadow-pop); }
 .session-ended h1 { margin: 0 0 10px; font-size: 22px; font-weight: 700; }
-.session-ended p { margin: 0; color: var(--color-muted-foreground); }
+.session-ended p { margin: 0 0 16px; color: var(--color-muted-foreground); }
 
 @keyframes snapshackle-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes snapshackle-scale-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }

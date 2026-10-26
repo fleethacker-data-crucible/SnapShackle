@@ -36,7 +36,8 @@ A **snap shackle** is a quick-release sailing shackle: it clips on in a moment a
 | Stop every running SnapShackle from a shell | `powershell -NoProfile -ExecutionPolicy Bypass -File Stop-SnapShackle.ps1` |
 
 - **Hidden tabs.** A studio tab in the background keeps SnapShackle running (it reports itself hidden and gets 75 seconds between heartbeats, because browsers slow timers in background tabs). A tab the browser puts to sleep or discards (Edge "sleeping tabs") counts as closed; use `--stay` or the tray preference if you rely on hotkeys with the studio long in the background.
-- **One instance.** If SnapShackle is already running, the launcher says where and asks *Stop it and start fresh?*. `--replace` (or `-Replace`) answers yes without asking.
+- **One instance.** If SnapShackle is already running, the launcher says where and asks *Stop it and start fresh?*. `--replace` (or `-Replace`) answers yes without asking. If that copy is still running after the stop request, the launcher warns and does not start a second one.
+- **A restarted server.** The studio window title includes the port and a start id. After the server starts again, an old tab shows that the session stopped, with a **Reload** button, instead of failing in silence. The tray, a tray click, and a capture notification focus only the current session's window, and open a fresh tab when that window is not there. The browser opens after the local health check answers. If Explorer restarts, the tray icon is added again.
 - **Never mid-save.** Auto-stop waits while a hotkey capture is still being saved, copied and indexed, then stops on the next check.
 - **Runtime files.** Each running SnapShackle writes `%LOCALAPPDATA%\SnapShackle\logs\snapshackle-server-<pid>.json` (pid, port, URL, start time; never the session token) next to its captures and settings, and deletes it when it stops. `Stop-SnapShackle.ps1` and the launcher read these (and the `%LOCALAPPDATA%\CutterMk\logs\cuttermk-server-<pid>.json` files of a CutterMk build), remove stale ones, and also find a SnapShackle or CutterMk started without one. A running SnapShackle is asked to stop first, so it removes its tray icon and releases its hotkeys itself; only one that does not answer is force-stopped.
 
@@ -161,7 +162,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/launcher_static_check.py` verifies launcher settings, TCP adapter, and dynamic port propagation.
 - `tests/windows_port_smoke.ps1` verifies localhost collision behavior on Windows 5.1 (requires user-authorized runtime).
 - `tests/windows_capture_perf.ps1 -DesktopCapture` verifies pixel-perfect source-bitmap crops and prints native capture and PNG encoding timings on Windows.
-- `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API.
+- `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API, including a lost session (invalid session, failed heartbeat, or failed poll) and the Reload button.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
 - `node tests/audio_test.js` checks the record-sound choices and the video-only fallback when Share audio or the microphone is unavailable.

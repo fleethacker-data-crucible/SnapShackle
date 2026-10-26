@@ -68,6 +68,9 @@ MOCK = r"""(imageBase64) => {
     const url=String(path);
     if(url.startsWith('blob:'))return originalFetch(path,options);
     const json=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json'}});
+    if(window.__rejectSession)return json({error:'Invalid session'},403);
+    if(url.startsWith('/api/heartbeat')&&window.__failHeartbeat)return json({error:'down'},503);
+    if(url.startsWith('/api/events')&&window.__failPoll)return json({error:'down'},503);
     if(url.startsWith('/api/health'))return json({capture:true,ocr:false,version:'test'});
     if(url.startsWith('/api/screens'))return json({screens:[{name:'TEST',primary:true}]});
     if(url.startsWith('/api/windows'))return json({windows:[{Title:'Mock window',Id:123}]});
@@ -263,7 +266,58 @@ with sync_playwright() as p:
     page.locator('#endSession').click()
     page.wait_for_selector('.session-ended', timeout=6000)
     assert page.evaluate('window.__stopIntent') == 'end-session'
-    assert 'SnapShackle has stopped' in page.locator('.session-ended').inner_text()
+    ended = page.locator('.session-ended').inner_text()
+    assert 'SnapShackle has stopped' in ended
+    assert 'lost the SnapShackle session' not in ended
+    assert page.locator('#reloadSession').inner_text() == 'Reload'
+    page.locator('#reloadSession').focus()
+    assert page.evaluate('document.activeElement && document.activeElement.id') == 'reloadSession'
+    assert page.evaluate('document.title') == 'SnapShackle Studio (stopped)'
     assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, theme toggle, tool shortcuts, heartbeat/beacon, End session')
+
+    def boot_studio(prelude):
+        extra = browser.new_page(viewport={'width':1440,'height':950})
+        extra.on('pageerror', lambda error: errors.append('extra: '+str(error)))
+        extra.set_content(html)
+        for sheet in styles:
+            extra.add_style_tag(path=str(ROOT/sheet))
+        extra.evaluate(MOCK, image_b64)
+        extra.evaluate(prelude)
+        for name in scripts:
+            extra.add_script_tag(path=str(ROOT/'assets'/f'{name}.js'))
+        return extra
+
+    def assert_session_lost(extra, label):
+        extra.wait_for_selector('.session-ended', timeout=8000)
+        text = extra.locator('.session-ended').inner_text()
+        assert 'SnapShackle has stopped' in text, label
+        assert 'lost the SnapShackle session' in text, label
+        assert extra.locator('.session-ended').count() == 1, label
+        button = extra.locator('#reloadSession')
+        assert button.inner_text() == 'Reload', label
+        assert extra.evaluate("document.querySelector('#reloadSession').tagName") == 'BUTTON', label
+        button.focus()
+        assert extra.evaluate('document.activeElement.id') == 'reloadSession', label
+        assert extra.evaluate('document.title') == 'SnapShackle Studio (stopped)', label
+        colors = button.evaluate('''el => {
+          const style = getComputedStyle(el);
+          return {color: style.color, background: style.backgroundColor};
+        }''')
+        ratio = _contrast(_rgb(colors['color']), _rgb(colors['background']))
+        assert ratio >= 4.5, (label, colors, ratio)
+        extra.evaluate("fetch('/api/health').catch(()=>{})")
+        extra.wait_for_timeout(150)
+        assert extra.locator('.session-ended').count() == 1, label+' stacked a second screen'
+
+    lost = boot_studio('window.__rejectSession=true')
+    assert_session_lost(lost, '403 Invalid session')
+    lost.close()
+    failed_beat = boot_studio('window.__failHeartbeat=true')
+    assert_session_lost(failed_beat, 'failed heartbeat')
+    failed_beat.close()
+    failed_poll = boot_studio('window.__failPoll=true')
+    assert_session_lost(failed_poll, 'failed poll')
+    failed_poll.close()
+    assert not errors, 'JS errors: '+repr(errors)
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, theme toggle, tool shortcuts, heartbeat/beacon, End session, lost session')
     browser.close()

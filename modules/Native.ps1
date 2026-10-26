@@ -101,8 +101,11 @@ namespace SnapShackle {
    }
    return true;
   }
-  // Brings an existing window whose title contains the text to the front. Returns false if none.
+  // Brings the visible window whose title contains this session title to the front.
+  // The caller passes the full current title (port and start id). An empty needle matches nothing,
+  // so a stale "SnapShackle Studio" tab is not focused. Returns false if none.
   public static bool ActivateByTitle(string contains){
+   if(string.IsNullOrEmpty(contains))return false;
    IntPtr found=IntPtr.Zero;
    EnumWindows((h,d)=>{if(IsWindowVisible(h)&&Title(h).IndexOf(contains,StringComparison.OrdinalIgnoreCase)>=0){found=h;return false;}return true;},IntPtr.Zero);
    if(found==IntPtr.Zero)return false;

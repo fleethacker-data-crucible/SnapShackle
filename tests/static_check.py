@@ -78,3 +78,31 @@ assert "recordAudio = 'off'" in library and 'recordMicId' in library
 assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
 assert 'normalizeMode' in audio and 'prepareRecording' in audio
 print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
+
+# A restarted server reuses the port. The old tab must say the session is gone, and the tray must
+# focus only the window for this start (port + start id), never a stale "SnapShackle Studio" tab.
+assert "(editor|studio|gif|stitch|redact|icons|theme|audio)" in host, 'audio.js must be served with the other studio scripts'
+assert "__STUDIO_TITLE__" in host and "__STUDIO_TITLE__" in ui and "__STUDIO_TITLE__" in studio
+assert "studioStartId" in host and "StudioTitle" in host and "$script:studioTitle" in host
+assert "SnapShackle Studio " in host
+assert "HttpWebRequest" not in host and "WebRequest]::Create" in host
+assert "/api/health" in host and "BrowserMessage" in host and "BrowserClosed" in host
+assert "did not answer /api/health" in host
+assert "X-SnapShackle-Token" in host
+stop_at = host.index("Stop-SnapShackleProcesses $searchDirs")
+still_at = host.index("Get-SnapShackleProcesses $searchDirs", stop_at)
+warn_at = host.index("still running", stop_at)
+assert still_at > stop_at and warn_at > still_at and "exit 1" in host[warn_at:warn_at+400]
+assert "Not starting another copy." in host
+assert "ActivateByTitle('SnapShackle Studio')" not in tray
+assert "StudioTitle" in tray and "ActivateByTitle($title)" in tray
+assert "TaskbarCreated" in tray and "ExplorerRestarted" in tray and "RegisterWindowMessage" in tray
+assert "string.IsNullOrEmpty(contains)" in native
+assert "reloadSession" in studio and "showSessionEnded('lost')" in studio
+assert "Invalid session" in studio and "location.reload" in studio
+beat = studio.split("function heartbeat", 1)[1].split("function leavingSignal", 1)[0]
+assert "showSessionEnded('lost')" in beat and ".catch(()=>{})" not in beat.split("if(leaving)", 1)[0]
+poll = studio.split("async function pollEvents", 1)[1].split("setInterval(pollEvents", 1)[0]
+assert poll.count("showSessionEnded('lost')") >= 2
+assert "SnapShackle Studio (stopped)" in studio
+print('PASS: session loss is visible, the tray matches only this start, health is checked, Explorer restart restores the icon')

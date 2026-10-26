@@ -3,9 +3,16 @@
 'use strict';
 const $=selector=>document.querySelector(selector);
 const TOKEN='__SESSION_TOKEN__';
+const STUDIO_TITLE='__STUDIO_TITLE__';
+if(STUDIO_TITLE.indexOf('__')<0)document.title=STUDIO_TITLE;
 // Sets a button to an icon plus a label (used for buttons whose state changes, e.g. Record/Stop).
 function setButton(el,iconName,label,live=false){el.innerHTML=SnapShackleIcons.icon(iconName)+'<span>'+label+'</span>';el.classList.toggle('is-live',live)}
-const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}});
+// A 403 Invalid session means this tab is talking to a new server (same port, new token). Say so.
+function noteInvalidSession(response){
+  if(response.status===403){response.clone().json().then(body=>{if(body&&body.error==='Invalid session')showSessionEnded('lost')}).catch(()=>{})}
+  return response;
+}
+const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}}).then(noteInvalidSession);
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
 let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:''};
@@ -356,7 +363,12 @@ let lastEvent=null,eventsBusy=false;
 async function openCapture(name,label){const r=await api('/api/library/'+encodeURIComponent(name));if(!r.ok)throw Error('Capture not found');await loadImage(await r.blob(),label||name,{autoSave:false});librarySelection=name}
 async function pollEvents(){
   if(eventsBusy||document.hidden||sessionEnded)return;eventsBusy=true;
-  try{const r=await api('/api/events?since='+(lastEvent??0));if(!r.ok)return;const d=await r.json();
+  try{
+    let response;
+    try{response=await api('/api/events?since='+(lastEvent??0))}
+    catch(e){showSessionEnded('lost');return}
+    if(!response.ok){showSessionEnded('lost');return}
+    const d=await response.json();
     if(lastEvent===null){lastEvent=d.latest||0;return}
     const captures=(d.events||[]).filter(e=>e.type==='capture');lastEvent=Math.max(lastEvent,d.latest||0);
     if(captures.length){const latest=captures.at(-1);await openCapture(latest.name,'Hotkey capture');await refreshLibrary();notify('Hotkey capture opened · already copied to the clipboard and saved')}
@@ -373,7 +385,12 @@ let sessionEnded=false;
 const tabId=(globalThis.crypto?.randomUUID?.()||(Math.random().toString(36).slice(2)+Date.now().toString(36))).replace(/[^A-Za-z0-9-]/g,'').slice(0,64);
 function heartbeat(leaving=false){
   if(sessionEnded)return;
-  try{api('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tab:tabId,leaving,hidden:document.hidden}),keepalive:true}).catch(()=>{})}catch{}
+  let sent;
+  try{sent=api('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tab:tabId,leaving,hidden:document.hidden}),keepalive:true})}
+  catch(e){showSessionEnded('lost');return}
+  // The unload beacon is best-effort. A failed heartbeat while the tab is still open is the session ending.
+  if(leaving){sent.catch(()=>{});return}
+  sent.then(r=>{if(!r.ok)showSessionEnded('lost')}).catch(()=>showSessionEnded('lost'));
 }
 function leavingSignal(){
   if(sessionEnded)return;
@@ -386,16 +403,29 @@ heartbeat();setInterval(()=>heartbeat(),5000);
 window.addEventListener('pagehide',leavingSignal);
 window.addEventListener('pageshow',event=>{if(event.persisted)heartbeat()});
 document.addEventListener('visibilitychange',()=>heartbeat());
-function showSessionEnded(){
+function showSessionEnded(reason){
+  if(document.querySelector('.session-ended'))return;
+  sessionEnded=true;
   const screen=document.createElement('div');screen.className='session-ended';screen.setAttribute('role','alert');
-  screen.innerHTML='<div><h1>SnapShackle has stopped</h1><p>The local server, tray icon and global hotkeys are off. Close this tab, or run Launch-SnapShackle.bat to start a new session.</p></div>';
-  document.body.append(screen);document.title='SnapShackle Studio (stopped)';
+  const box=document.createElement('div');
+  const heading=document.createElement('h1');heading.textContent='SnapShackle has stopped';
+  const text=document.createElement('p');
+  text.textContent=reason==='lost'
+    ? 'This tab lost the SnapShackle session. The local server may have restarted. Reload to open the current session.'
+    : 'The local server, tray icon and global hotkeys are off. Close this tab, or run Launch-SnapShackle.bat to start a new session.';
+  const reload=document.createElement('button');
+  reload.type='button';reload.id='reloadSession';reload.className='btn btn-default';reload.textContent='Reload';
+  reload.addEventListener('click',()=>location.reload());
+  box.append(heading,text,reload);screen.append(box);document.body.append(screen);
+  // The stopped title must not contain the port or start id, so the tray will not focus this tab.
+  document.title='SnapShackle Studio (stopped)';
+  try{reload.focus()}catch{}
 }
 $('#endSession').onclick=async()=>{
   if(!confirm('End this SnapShackle session? The local server, tray icon and global hotkeys stop. Unsaved edits in this tab are lost.'))return;
   try{const r=await api('/api/session/stop',{method:'POST',headers:{'Content-Type':'application/json','X-SnapShackle-Intent':'end-session'},body:'{}'});
     if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'Could not end the session')}
-    sessionEnded=true;showSessionEnded()}catch(e){fail(e)}
+    showSessionEnded()}catch(e){fail(e)}
 };
 refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();loadSettings();
 })();
