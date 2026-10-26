@@ -30,6 +30,8 @@ jobs:
         run: |
           if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Write-Host 'node not installed; skipping'; exit 0 }
           Get-ChildItem assets\*.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { exit 1 } }
+          node tests/audio_test.js
+          if ($LASTEXITCODE) { exit 1 }
       - name: Loopback port fallback (real Windows sockets)
         shell: cmd
         run: '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\windows_port_smoke.ps1'

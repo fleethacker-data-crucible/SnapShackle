@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -58,3 +58,23 @@ for source,text in (('index.html',ui),('assets/studio.js',studio),('assets/style
  assert 'assets/brand' not in text, source+' must not reference the README emblems'
 assert '/assets/ui/emblem-dark.png' in ui and '/assets/ui/emblem-light.png' in ui and '/assets/vendor/fleet/fleet.css' in ui and 'data-app="snapshackle"' in ui
 print('PASS: README emblems stay in assets/brand; the app uses its copies in assets/ui and the Fleet tokens')
+
+# Optional video sound: off unless chosen, and GIF / stills / scrolling capture stay silent.
+audio=(ROOT/'assets/audio.js').read_text(encoding='utf-8')
+assert 'src="/assets/audio.js"' in ui
+assert 'id="recordAudio"' in ui and 'id="recordMic"' in ui and 'id="recordMicRefresh"' in ui and 'id="recordAudioLive"' in ui
+assert 'for="recordAudio"' in ui and 'for="recordMic"' in ui
+assert 'aria-describedby="recordAudioHelp"' in ui and 'aria-live="polite"' in ui and 'role="status"' in ui
+assert 'SnapShackleAudio.prepareRecording' in studio
+assert 'shareScreen({video:{frameRate:settings.recordFps},audio:false})' in studio
+gif_fn=studio.split("$('#gif').onclick",1)[1].split("$('#scrollAuto').onclick",1)[0]
+assert 'getSharedScreen()' in gif_fn and 'prepareRecording' not in gif_fn and 'getUserMedia' not in gif_fn
+browser_fn=studio.split("$('#browserCapture').onclick",1)[1].split('const toolNames',1)[0]
+assert 'getSharedScreen()' in browser_fn and 'prepareRecording' not in browser_fn
+scroll_fn=studio.split("$('#scrollAuto').onclick",1)[1].split("$('#scrollAdd').onclick",1)[0]
+assert 'getSharedScreen()' in scroll_fn and 'prepareRecording' not in scroll_fn
+library=(ROOT/'modules/Library.ps1').read_text(encoding='utf-8')
+assert "recordAudio = 'off'" in library and 'recordMicId' in library
+assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
+assert 'normalizeMode' in audio and 'prepareRecording' in audio
+print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')

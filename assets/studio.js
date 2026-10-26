@@ -8,11 +8,13 @@ function setButton(el,iconName,label,live=false){el.innerHTML=SnapShackleIcons.i
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}});
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark'};
+let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:''};
 // Preferences saved under earlier names (CutterMk, Lasso, SnipHero) are copied forward once to
 // 'snapshackle-settings'; the old keys are left in place so an older build still finds them.
 function migrateStorageKey(key,legacyKeys){try{const current=localStorage.getItem(key);if(current!==null)return current;for(const old of legacyKeys){const value=localStorage.getItem(old);if(value!==null){try{localStorage.setItem(key,value)}catch{}return value}}}catch{}return null}
 try {const saved=migrateStorageKey('snapshackle-settings',['cuttermk-settings','lasso-settings','sniphero-settings']);settings={...settings,...JSON.parse(saved||'{}')};if(['CutterMk','SnipHero','Lasso'].includes(settings.namePrefix))settings.namePrefix='SnapShackle'}catch{}
+settings.recordAudio=SnapShackleAudio.normalizeMode(settings.recordAudio);
+settings.recordMicId=SnapShackleAudio.normalizeMicId(settings.recordMicId);
 function notify(message){$('#status').textContent=message}
 function fail(error){console.error('[SnapShackle]',error);notify('⚠ '+(error?.message||error))}
 function sanitizePrefix(s){return (s||'SnapShackle').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'SnapShackle'}
@@ -81,7 +83,9 @@ $('#capture').onclick=()=>capture(withDelay('/api/capture'+($('#display').value!
 $('#region').onclick=()=>capture(withDelay('/api/region')).catch(fail);
 $('#refreshWindows').onclick=refreshWindows;
 $('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose an application window first');capture(withDelay('/api/capture?window='+encodeURIComponent($('#windows').value))).catch(fail)};
-async function getSharedScreen(){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia({video:{frameRate:settings.recordFps},audio:false})}
+function shareScreen(constraints){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia(constraints)}
+// Stills, GIF and scrolling capture stay silent. Video sound goes through SnapShackleAudio only.
+async function getSharedScreen(){return shareScreen({video:{frameRate:settings.recordFps},audio:false})}
 async function videoFor(stream){let video=document.createElement('video');video.srcObject=stream;video.muted=true;await video.play();if(!video.videoWidth)await new Promise(r=>setTimeout(r,400));return video}
 $('#browserCapture').onclick=async()=>{let stream;try{stream=await getSharedScreen();const video=await videoFor(stream),temp=document.createElement('canvas');temp.width=video.videoWidth;temp.height=video.videoHeight;temp.getContext('2d').drawImage(video,0,0);await loadImage(await new Promise(resolve=>temp.toBlob(resolve,'image/png')),'Browser capture')}catch(e){fail(e)}finally{stream?.getTracks().forEach(t=>t.stop())}};
 // Each tool: icon, label and a single-key shortcut (works while the canvas page has focus, not in text fields).
@@ -164,16 +168,73 @@ async function saveLibrary(){let png=await editor.export();let r=await api('/api
 $('#librarySave').onclick=()=>saveLibrary().catch(fail);
 $('#metadataSave').onclick=async()=>{if(!librarySelection)return notify('Choose a saved capture first');try{let r=await api('/api/library/'+encodeURIComponent(librarySelection),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags:$('#tags').value.split(',').map(x=>x.trim()).filter(Boolean),note:$('#note').value})});if(!r.ok)throw Error('Could not save details');notify('Capture details updated');await refreshLibrary()}catch(e){fail(e)}};
 $('#libraryDelete').onclick=async()=>{if(!librarySelection)return notify('Choose a saved capture first');if(!confirm('Delete '+librarySelection+' permanently?'))return;try{let r=await api('/api/library/'+encodeURIComponent(librarySelection),{method:'DELETE'});if(!r.ok)throw Error('Delete failed');librarySelection=null;$('#tags').value='';$('#note').value='';await refreshLibrary();notify('Capture deleted')}catch(e){fail(e)}};
+function setRecordAudioLive(plan){
+  const el=$('#recordAudioLive'),button=$('#record');
+  const text=plan&&plan.mode!=='off'?(plan.liveText||SnapShackleAudio.liveText(plan)):'';
+  if(!el)return;
+  if(!text){el.hidden=true;el.textContent='';el.className='record-audio-live';button?.removeAttribute('aria-describedby');return}
+  el.className='record-audio-live '+(plan.hasAudio?'is-audible':'is-silent');
+  el.hidden=false;el.textContent=text;
+  if(button)button.setAttribute('aria-describedby','recordAudioLive');
+}
+function openAudioContext(){
+  if(typeof AudioContext==='undefined')return null;
+  try{const ctx=new AudioContext();const pending=ctx.resume();if(pending&&pending.catch)pending.catch(()=>{});return ctx}catch{return null}
+}
 $('#record').onclick=async()=>{
  if(gifInterval||scrollInterval)return notify('Finish GIF or scrolling capture before recording video');
  if(recorder){if(recorder.state!=='inactive')recorder.stop();return}
- try{recordStream=await getSharedScreen();const supported=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));if(!supported)throw Error('WebM recording not supported');
-   const chunks=[];const stream=recordStream;recorder=new MediaRecorder(stream,{mimeType:supported});
+ const mode=SnapShackleAudio.normalizeMode(settings.recordAudio);
+ let audioSession=null,earlyContext=null;
+ try{
+   if(mode==='both')earlyContext=openAudioContext();
+   audioSession=await SnapShackleAudio.prepareRecording({
+     mode,fps:settings.recordFps,micId:settings.recordMicId,audioContext:earlyContext,
+     getDisplayMedia:shareScreen,
+     getUserMedia(constraints){
+       if(!navigator.mediaDevices?.getUserMedia){const error=Error('Microphone capture is unavailable');error.name='NotSupportedError';throw error}
+       return navigator.mediaDevices.getUserMedia(constraints);
+     }
+   });
+   earlyContext=null;
+   let stream=audioSession.stream,hasAudio=!!audioSession.plan.hasAudio;
+   let supported=SnapShackleAudio.mimeCandidates(hasAudio).find(t=>MediaRecorder.isTypeSupported(t));
+   if(!supported)throw Error('WebM recording not supported');
+   try{recorder=new MediaRecorder(stream,SnapShackleAudio.recorderOptions(supported,hasAudio))}
+   catch(error){
+     const retry=SnapShackleAudio.onRecorderConstructError(hasAudio);
+     if(!retry.retryVideoOnly)throw error;
+     try{audioSession.cleanup()}catch{}
+     stream=new MediaStream(stream.getVideoTracks());
+     audioSession={stream,plan:SnapShackleAudio.videoOnlyPlan(mode,retry.message),cleanup(){}};
+     hasAudio=false;
+     supported=SnapShackleAudio.mimeCandidates(false).find(t=>MediaRecorder.isTypeSupported(t));
+     if(!supported)throw error;
+     recorder=new MediaRecorder(stream,SnapShackleAudio.recorderOptions(supported,false));
+   }
+   recordStream=stream;
+   const chunks=[];
    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
-   recorder.onstop=()=>{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName('webm'));stream.getTracks().forEach(t=>t.stop());recordStream=null;recorder=null;setButton($('#record'),'record','Record video');notify('WebM recording exported')};
-   for(let track of stream.getVideoTracks())track.onended=()=>{if(recorder?.state==='recording')recorder.stop()};
-   recorder.start(1000);setButton($('#record'),'stop','Stop recording',true);notify('Recording: use Stop to export WebM');
- }catch(e){recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;recorder=null;fail(e)}
+   recorder.onstop=()=>{
+     try{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName('webm'))}catch(e){fail(e)}
+     try{stream.getTracks().forEach(t=>t.stop())}catch{}
+     try{audioSession?.cleanup()}catch{}
+     audioSession=null;recordStream=null;recorder=null;setRecordAudioLive(null);
+     setButton($('#record'),'record','Record video');
+     notify(hasAudio?'WebM recording with sound exported. The file stays on this computer.':'WebM recording exported');
+   };
+   for(const track of stream.getVideoTracks())track.onended=()=>{if(recorder?.state==='recording')recorder.stop()};
+   recorder.start(1000);
+   setButton($('#record'),'stop',hasAudio?'Stop recording (sound on)':'Stop recording',true);
+   if(mode==='off')notify('Recording: use Stop to export WebM');
+   else{setRecordAudioLive(audioSession.plan);notify(audioSession.plan.message||'Recording with sound. Use Stop to export WebM. Sound stays on this computer.')}
+ }catch(e){
+   try{audioSession?.stream?.getTracks().forEach(t=>t.stop())}catch{}
+   try{audioSession?.cleanup()}catch{}
+   try{if(earlyContext)SnapShackleAudio.closeContext(earlyContext)}catch{}
+   audioSession=null;recordStream=null;recorder=null;setRecordAudioLive(null);
+   fail(e);
+ }
 };
 $('#gif').onclick=async()=>{
  if(recorder||scrollInterval)return notify('Finish video or scrolling capture before recording GIF');
@@ -244,13 +305,22 @@ $('#redactTermApply').onclick=async()=>{try{const term=$('#redactTerm').value.tr
   notify('Reading text…');const r=await recognize();const hits=SnapShackleRedact.findText(r.lines,term);const n=applyRedactions(hits.map(h=>h.box));
   notify(n?`Redacted ${n} instance(s) of "${term}". Undo removes them in one step.`:`"${term}" was not found by ${r.engine}`)}catch(e){fail(e)}};
 $('#copyOcr').onclick=()=>navigator.clipboard.writeText($('#ocrText').value).then(()=>notify('Text copied')).catch(fail);
-function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#theme').value=settings.theme;applyTheme(settings.theme)}
+function syncMicRow(){const row=$('#recordMicRow');if(row)row.hidden=!['mic','both'].includes(SnapShackleAudio.normalizeMode($('#recordAudio').value))}
+function ensureMicOption(id){const mic=$('#recordMic');if(!mic)return;const want=SnapShackleAudio.normalizeMicId(id);if(want&&![...mic.options].some(o=>o.value===want))mic.add(new Option('Saved microphone',want));mic.value=[...mic.options].some(o=>o.value===want)?want:''}
+async function refreshMicList(ask){
+  const mic=$('#recordMic');if(!mic)return;
+  const keep=SnapShackleAudio.normalizeMicId(mic.value||settings.recordMicId);
+  if(ask){try{if(!navigator.mediaDevices?.getUserMedia)throw Error('Microphone capture is unavailable');const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});stream.getTracks().forEach(t=>t.stop())}catch(e){notify(SnapShackleAudio.permissionText(e))}}
+  try{if(navigator.mediaDevices?.enumerateDevices){const devices=await navigator.mediaDevices.enumerateDevices();mic.replaceChildren(new Option('Default microphone',''));(devices||[]).filter(d=>d.kind==='audioinput'&&d.deviceId).forEach((d,i)=>mic.add(new Option(d.label||('Microphone '+(i+1)),SnapShackleAudio.normalizeMicId(d.deviceId))))}}catch(e){if(!ask)console.warn('[SnapShackle] microphones',e)}
+  ensureMicOption(keep);
+}
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);ensureMicOption(settings.recordMicId);syncMicRow();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshMicList(false)}
 // Theme follows Lazarette: dark by default, light on request, or match Windows.
 function applyTheme(choice){const theme=window.SnapShackleTheme?SnapShackleTheme.apply(choice):'dark';const toggle=$('#themeToggle');
   if(toggle){toggle.innerHTML=SnapShackleIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
 $('#themeToggle').onclick=()=>{settings.theme=(window.SnapShackleTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
 $('#theme').onchange=()=>{settings.theme=$('#theme').value;applyTheme(settings.theme)};
-function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme}}
+function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId)}}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
 async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
@@ -264,7 +334,9 @@ async function saveSettings(announce=true){
   if(!r.ok)throw Error('Could not save preferences');const saved=await r.json();settings=fromHost(saved);
   if(announce){showSettings();notify('Preferences saved')}
 }
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.theme=$('#theme').value;saveSettings().catch(fail)};
+$('#recordAudio').onchange=syncMicRow;
+$('#recordMicRefresh').onclick=()=>refreshMicList(true).catch(fail);
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.recordAudio=SnapShackleAudio.normalizeMode($('#recordAudio').value);settings.recordMicId=SnapShackleAudio.normalizeMicId($('#recordMic').value);settings.theme=$('#theme').value;saveSettings().catch(fail)};
 showSettings();
 document.addEventListener('keydown',event=>{
   if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
@@ -278,7 +350,7 @@ document.addEventListener('keydown',event=>{
 const lifecycleText={tab:'stops when this tab closes',stay:'stays in the tray (--stay); Exit in the tray menu',tray:'stays in the tray (preference); Exit in the tray menu',env:'keeps running (SNAPSHACKLE_AUTO_STOP=0)'};
 async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none',life='unknown';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';if(d.version)$('.side-footer-version').textContent='v'+d.version;ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';life=lifecycleText[d.lifecycle]||'unknown';
    const list=(d.hotkeys||[]).filter(h=>h.keys).map(h=>h.keys+' '+h.action);keys=list.length?list.join(', '):'none registered';const help=$('#globalHotkeys');if(help)help.textContent=keys}}catch{}
- $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nSnapShackle session: '+life+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
+ $('#diagnostics').textContent='Windows capture: '+native+'\nDPI awareness: '+dpi+'\nGlobal hotkeys: '+keys+'\nSnapShackle session: '+life+'\nNative OCR: '+ocr+'\nBrowser record: '+(typeof MediaRecorder==='undefined'?'unavailable':'available')+'\nScreen share: '+(navigator.mediaDevices?.getDisplayMedia?'available':'unavailable')+'\nRecord sound: '+SnapShackleAudio.normalizeMode(settings.recordAudio)+' (WebM stays on this computer)\nClipboard: '+(navigator.clipboard?'available':'unavailable')+'\nLast screenshot: '+lastCaptureTiming+'\nData remains on this computer.'}
 // Hotkey captures happen while the browser is in the background; poll for them.
 let lastEvent=null,eventsBusy=false;
 async function openCapture(name,label){const r=await api('/api/library/'+encodeURIComponent(name));if(!r.ok)throw Error('Capture not found');await loadImage(await r.blob(),label||name,{autoSave:false});librarySelection=name}

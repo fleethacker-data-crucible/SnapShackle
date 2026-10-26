@@ -16,6 +16,51 @@ stream = io.BytesIO()
 image.save(stream, 'PNG')
 image_b64 = base64.b64encode(stream.getvalue()).decode()
 
+def _channel(value):
+    value = value / 255
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+def _contrast(foreground, background):
+    def lum(rgb):
+        return 0.2126 * _channel(rgb[0]) + 0.7152 * _channel(rgb[1]) + 0.0722 * _channel(rgb[2])
+    lighter, darker = max(lum(foreground), lum(background)), min(lum(foreground), lum(background))
+    return (lighter + 0.05) / (darker + 0.05)
+
+def _rgb(value):
+    return [int(part) for part in re.findall(r'\d+', value)[:3]]
+
+def assert_audio_contrast(page, theme):
+    """Record-sound controls and the recording announcement meet WCAG AA 4.5:1."""
+    control = page.locator('#recordAudio').evaluate('''el => {
+      function opaque(node) {
+        while (node) {
+          const bg = getComputedStyle(node).backgroundColor;
+          const parts = bg.match(/[\\d.]+/g) || [];
+          const alpha = parts.length === 4 ? parseFloat(parts[3]) : 1;
+          if (alpha > 0.99) return bg;
+          node = node.parentElement;
+        }
+        return getComputedStyle(document.body).backgroundColor;
+      }
+      const style = getComputedStyle(el);
+      const label = document.querySelector('label[for="recordAudio"]');
+      return {color: style.color, background: opaque(el), label: getComputedStyle(label).color, labelBackground: opaque(label)};
+    }''')
+    ratio = _contrast(_rgb(control['color']), _rgb(control['background']))
+    assert ratio >= 4.5, (theme, 'record sound select', control, ratio)
+    label_ratio = _contrast(_rgb(control['label']), _rgb(control['labelBackground']))
+    assert label_ratio >= 4.5, (theme, 'record sound label', control, label_ratio)
+    live = page.locator('#recordAudioLive').evaluate('''el => {
+      el.hidden = false;
+      el.textContent = 'Recording with sound: microphone';
+      el.className = 'record-audio-live is-audible';
+      const style = getComputedStyle(el);
+      return {color: style.color, background: style.backgroundColor};
+    }''')
+    live_ratio = _contrast(_rgb(live['color']), _rgb(live['background']))
+    assert live_ratio >= 4.5, (theme, 'recording announcement', live, live_ratio)
+    page.locator('#recordAudioLive').evaluate('el => { el.hidden = true; el.textContent = ""; el.className = "record-audio-live"; }')
+
 MOCK = r"""(imageBase64) => {
   const bytes=Uint8Array.from(atob(imageBase64), c=>c.charCodeAt(0));
   const originalFetch=window.fetch.bind(window);
@@ -121,6 +166,26 @@ with sync_playwright() as p:
     # First run copies browser preferences to the host; saving goes to the host.
     page.wait_for_function('window.__settings && window.__settings.namePrefix==="SnapShackle"', timeout=6000)
     page.locator('#tabWorkflows').click()
+    assert page.locator('#recordAudio').input_value()=='off', 'Record sound was not off by default'
+    assert page.locator('label[for="recordAudio"]').inner_text().startswith('Record sound')
+    assert page.locator('#recordMicRow').is_hidden()
+    page.locator('#recordAudio').focus()
+    assert page.evaluate('document.activeElement.id')=='recordAudio', 'Record sound control is not keyboard focusable'
+    page.locator('#recordAudio').select_option('mic')
+    assert page.locator('#recordMicRow').is_visible()
+    page.locator('#recordMic').focus()
+    assert page.evaluate('document.activeElement.id')=='recordMic', 'Microphone picker is not keyboard focusable'
+    page.locator('#recordMicRefresh').focus()
+    assert page.evaluate('document.activeElement.id')=='recordMicRefresh'
+    page.locator('#recordAudio').select_option('both')
+    page.evaluate('document.querySelector("#status").textContent=""')
+    page.locator('#settingsSave').click()
+    # "Preferences saved" is set after the host response is written back into the form.
+    page.wait_for_function('document.querySelector("#status").textContent.includes("Preferences saved") && window.__settings.recordAudio==="both"', timeout=6000)
+    page.locator('#recordAudio').select_option('off')
+    page.evaluate('document.querySelector("#status").textContent=""')
+    page.locator('#settingsSave').click()
+    page.wait_for_function('document.querySelector("#status").textContent.includes("Preferences saved") && window.__settings.recordAudio==="off" && window.__settings.recordMicId===""', timeout=6000)
     page.locator('#prefix').fill('Ops')
     page.locator('#settingsSave').click()
     page.wait_for_function('window.__settings.namePrefix==="Ops"', timeout=6000)
@@ -129,8 +194,10 @@ with sync_playwright() as p:
     page.locator('#themeToggle').click()
     page.wait_for_function("document.documentElement.dataset.theme==='light' && window.__settings && window.__settings.theme==='light'", timeout=6000)
     assert page.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(251, 250, 242)', 'Fleet Chart room tokens not applied'
+    assert_audio_contrast(page, 'light')
     page.locator('#themeToggle').click()
     page.wait_for_function("document.documentElement.dataset.theme==='dark' && window.__settings.theme==='dark'", timeout=6000)
+    assert_audio_contrast(page, 'dark')
     # Single-key tool shortcuts (ignored while typing in a field).
     page.locator('#canvas').click(position={'x': 5, 'y': 5})
     page.keyboard.press('a')
