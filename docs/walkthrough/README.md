@@ -2,13 +2,14 @@
 
 Capture a window or region, annotate and redact it, read its text, and keep it in a searchable library.
 
-> **Status: skeleton.** The screenshots below are placeholders. Zombie Admin captures them with demo data, and the Chief of Staff scans them for sensitive content before they are added (team directive 10). Until then the image links do not resolve.
+> **Draft walkthrough.** The screenshots below have not been added yet. They must use demo data and be reviewed before publication. The image links will resolve when those screenshots are included.
 
 ## Before you start
 
 - Windows PowerShell 5.1 (part of Windows). No administrator rights and no installer.
 - Microsoft Edge or Google Chrome.
 - Launch: Double-click `Launch-SnapShackle.bat` (opens the studio on `127.0.0.1`, port 8765 or the next free one).
+- Closing the last studio tab normally stops the server, tray icon and hotkeys. See [Session lifecycle](../../README.md#session-lifecycle) for keeping hotkeys in the tray and ending a session.
 
 ## Steps
 
@@ -56,4 +57,4 @@ Cover anything sensitive with a redaction box before you share the image.
 
 ## About these images
 
-Images live in [`docs/assets/walkthrough/`](../assets/walkthrough/), named `NN-<screen>.png` after the step they belong to. They are 1440x900 at 100% scale in the Dark theme, and show demo data only.
+Screenshots will be stored in [`docs/assets/walkthrough/`](../assets/walkthrough/), named `NN-<screen>.png` after their step. Capture them at 1440x900, 100% scale, in the Dark theme, using demo data only. Review them for sensitive content before adding them.
