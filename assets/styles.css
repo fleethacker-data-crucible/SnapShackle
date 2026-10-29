@@ -181,6 +181,15 @@ input[type='range'] { accent-color: var(--color-primary); cursor: pointer; }
 .nav-item .icon { width: 16px; height: 16px; }
 .nav-item:hover { background: var(--color-muted); color: var(--color-foreground); }
 .nav-item.is-live { background: var(--color-destructive-soft); color: var(--color-destructive); }
+.record-audio-live {
+  margin: 4px 2px 0; padding: 8px 10px;
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+  background: var(--color-card); color: var(--color-foreground);
+  font-size: 12.5px; font-weight: 650; line-height: 1.45;
+}
+.record-audio-live.is-audible { border-color: var(--color-warning); }
+.record-audio-live.is-silent { border-color: var(--color-border-strong); }
+#recordMicRefresh { margin-top: 8px; }
 .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .tool {
   position: relative; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px;
@@ -191,7 +200,7 @@ input[type='range'] { accent-color: var(--color-primary); cursor: pointer; }
 .tool .icon { width: 16px; height: 16px; }
 .tool:hover { background: var(--color-muted); color: var(--color-foreground); }
 .tool.active { background: var(--color-sidebar-active); color: var(--color-foreground); border-color: color-mix(in srgb, var(--color-primary) 35%, transparent); }
-.tool.active .icon { color: var(--color-ring); }
+.tool.active .icon { color: var(--color-foreground); }
 .tool-key { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--color-muted-foreground); opacity: 0.7; }
 .side-footer {
   display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 9px 10px;
@@ -332,7 +341,7 @@ dialog p { color: var(--color-muted-foreground); font-size: 13px; }
 .session-ended { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: var(--color-background); }
 .session-ended div { max-width: 60ch; padding: 28px 30px; border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-card); box-shadow: var(--shadow-pop); }
 .session-ended h1 { margin: 0 0 10px; font-size: 22px; font-weight: 700; }
-.session-ended p { margin: 0; color: var(--color-muted-foreground); }
+.session-ended p { margin: 0 0 16px; color: var(--color-muted-foreground); }
 
 @keyframes snapshackle-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes snapshackle-scale-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }

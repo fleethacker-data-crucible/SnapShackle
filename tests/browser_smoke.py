@@ -16,6 +16,51 @@ stream = io.BytesIO()
 image.save(stream, 'PNG')
 image_b64 = base64.b64encode(stream.getvalue()).decode()
 
+def _channel(value):
+    value = value / 255
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+def _contrast(foreground, background):
+    def lum(rgb):
+        return 0.2126 * _channel(rgb[0]) + 0.7152 * _channel(rgb[1]) + 0.0722 * _channel(rgb[2])
+    lighter, darker = max(lum(foreground), lum(background)), min(lum(foreground), lum(background))
+    return (lighter + 0.05) / (darker + 0.05)
+
+def _rgb(value):
+    return [int(part) for part in re.findall(r'\d+', value)[:3]]
+
+def assert_audio_contrast(page, theme):
+    """Record-sound controls and the recording announcement meet WCAG AA 4.5:1."""
+    control = page.locator('#recordAudio').evaluate('''el => {
+      function opaque(node) {
+        while (node) {
+          const bg = getComputedStyle(node).backgroundColor;
+          const parts = bg.match(/[\\d.]+/g) || [];
+          const alpha = parts.length === 4 ? parseFloat(parts[3]) : 1;
+          if (alpha > 0.99) return bg;
+          node = node.parentElement;
+        }
+        return getComputedStyle(document.body).backgroundColor;
+      }
+      const style = getComputedStyle(el);
+      const label = document.querySelector('label[for="recordAudio"]');
+      return {color: style.color, background: opaque(el), label: getComputedStyle(label).color, labelBackground: opaque(label)};
+    }''')
+    ratio = _contrast(_rgb(control['color']), _rgb(control['background']))
+    assert ratio >= 4.5, (theme, 'record sound select', control, ratio)
+    label_ratio = _contrast(_rgb(control['label']), _rgb(control['labelBackground']))
+    assert label_ratio >= 4.5, (theme, 'record sound label', control, label_ratio)
+    live = page.locator('#recordAudioLive').evaluate('''el => {
+      el.hidden = false;
+      el.textContent = 'Recording with sound: microphone';
+      el.className = 'record-audio-live is-audible';
+      const style = getComputedStyle(el);
+      return {color: style.color, background: style.backgroundColor};
+    }''')
+    live_ratio = _contrast(_rgb(live['color']), _rgb(live['background']))
+    assert live_ratio >= 4.5, (theme, 'recording announcement', live, live_ratio)
+    page.locator('#recordAudioLive').evaluate('el => { el.hidden = true; el.textContent = ""; el.className = "record-audio-live"; }')
+
 MOCK = r"""(imageBase64) => {
   const bytes=Uint8Array.from(atob(imageBase64), c=>c.charCodeAt(0));
   const originalFetch=window.fetch.bind(window);
@@ -23,6 +68,9 @@ MOCK = r"""(imageBase64) => {
     const url=String(path);
     if(url.startsWith('blob:'))return originalFetch(path,options);
     const json=(x,status=200)=>new Response(JSON.stringify(x),{status,headers:{'Content-Type':'application/json'}});
+    if(window.__rejectSession)return json({error:'Invalid session'},403);
+    if(url.startsWith('/api/heartbeat')&&window.__failHeartbeat)return json({error:'down'},503);
+    if(url.startsWith('/api/events')&&window.__failPoll)return json({error:'down'},503);
     if(url.startsWith('/api/health'))return json({capture:true,ocr:false,version:'test'});
     if(url.startsWith('/api/screens'))return json({screens:[{name:'TEST',primary:true}]});
     if(url.startsWith('/api/windows'))return json({windows:[{Title:'Mock window',Id:123}]});
@@ -121,6 +169,26 @@ with sync_playwright() as p:
     # First run copies browser preferences to the host; saving goes to the host.
     page.wait_for_function('window.__settings && window.__settings.namePrefix==="SnapShackle"', timeout=6000)
     page.locator('#tabWorkflows').click()
+    assert page.locator('#recordAudio').input_value()=='off', 'Record sound was not off by default'
+    assert page.locator('label[for="recordAudio"]').inner_text().startswith('Record sound')
+    assert page.locator('#recordMicRow').is_hidden()
+    page.locator('#recordAudio').focus()
+    assert page.evaluate('document.activeElement.id')=='recordAudio', 'Record sound control is not keyboard focusable'
+    page.locator('#recordAudio').select_option('mic')
+    assert page.locator('#recordMicRow').is_visible()
+    page.locator('#recordMic').focus()
+    assert page.evaluate('document.activeElement.id')=='recordMic', 'Microphone picker is not keyboard focusable'
+    page.locator('#recordMicRefresh').focus()
+    assert page.evaluate('document.activeElement.id')=='recordMicRefresh'
+    page.locator('#recordAudio').select_option('both')
+    page.evaluate('document.querySelector("#status").textContent=""')
+    page.locator('#settingsSave').click()
+    # "Preferences saved" is set after the host response is written back into the form.
+    page.wait_for_function('document.querySelector("#status").textContent.includes("Preferences saved") && window.__settings.recordAudio==="both"', timeout=6000)
+    page.locator('#recordAudio').select_option('off')
+    page.evaluate('document.querySelector("#status").textContent=""')
+    page.locator('#settingsSave').click()
+    page.wait_for_function('document.querySelector("#status").textContent.includes("Preferences saved") && window.__settings.recordAudio==="off" && window.__settings.recordMicId===""', timeout=6000)
     page.locator('#prefix').fill('Ops')
     page.locator('#settingsSave').click()
     page.wait_for_function('window.__settings.namePrefix==="Ops"', timeout=6000)
@@ -129,8 +197,10 @@ with sync_playwright() as p:
     page.locator('#themeToggle').click()
     page.wait_for_function("document.documentElement.dataset.theme==='light' && window.__settings && window.__settings.theme==='light'", timeout=6000)
     assert page.evaluate("getComputedStyle(document.body).backgroundColor") == 'rgb(251, 250, 242)', 'Fleet Chart room tokens not applied'
+    assert_audio_contrast(page, 'light')
     page.locator('#themeToggle').click()
     page.wait_for_function("document.documentElement.dataset.theme==='dark' && window.__settings.theme==='dark'", timeout=6000)
+    assert_audio_contrast(page, 'dark')
     # Single-key tool shortcuts (ignored while typing in a field).
     page.locator('#canvas').click(position={'x': 5, 'y': 5})
     page.keyboard.press('a')
@@ -196,7 +266,58 @@ with sync_playwright() as p:
     page.locator('#endSession').click()
     page.wait_for_selector('.session-ended', timeout=6000)
     assert page.evaluate('window.__stopIntent') == 'end-session'
-    assert 'SnapShackle has stopped' in page.locator('.session-ended').inner_text()
+    ended = page.locator('.session-ended').inner_text()
+    assert 'SnapShackle has stopped' in ended
+    assert 'lost the SnapShackle session' not in ended
+    assert page.locator('#reloadSession').inner_text() == 'Reload'
+    page.locator('#reloadSession').focus()
+    assert page.evaluate('document.activeElement && document.activeElement.id') == 'reloadSession'
+    assert page.evaluate('document.title') == 'SnapShackle Studio (stopped)'
     assert not errors, 'JS errors: '+repr(errors)
-    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, theme toggle, tool shortcuts, heartbeat/beacon, End session')
+
+    def boot_studio(prelude):
+        extra = browser.new_page(viewport={'width':1440,'height':950})
+        extra.on('pageerror', lambda error: errors.append('extra: '+str(error)))
+        extra.set_content(html)
+        for sheet in styles:
+            extra.add_style_tag(path=str(ROOT/sheet))
+        extra.evaluate(MOCK, image_b64)
+        extra.evaluate(prelude)
+        for name in scripts:
+            extra.add_script_tag(path=str(ROOT/'assets'/f'{name}.js'))
+        return extra
+
+    def assert_session_lost(extra, label):
+        extra.wait_for_selector('.session-ended', timeout=8000)
+        text = extra.locator('.session-ended').inner_text()
+        assert 'SnapShackle has stopped' in text, label
+        assert 'lost the SnapShackle session' in text, label
+        assert extra.locator('.session-ended').count() == 1, label
+        button = extra.locator('#reloadSession')
+        assert button.inner_text() == 'Reload', label
+        assert extra.evaluate("document.querySelector('#reloadSession').tagName") == 'BUTTON', label
+        button.focus()
+        assert extra.evaluate('document.activeElement.id') == 'reloadSession', label
+        assert extra.evaluate('document.title') == 'SnapShackle Studio (stopped)', label
+        colors = button.evaluate('''el => {
+          const style = getComputedStyle(el);
+          return {color: style.color, background: style.backgroundColor};
+        }''')
+        ratio = _contrast(_rgb(colors['color']), _rgb(colors['background']))
+        assert ratio >= 4.5, (label, colors, ratio)
+        extra.evaluate("fetch('/api/health').catch(()=>{})")
+        extra.wait_for_timeout(150)
+        assert extra.locator('.session-ended').count() == 1, label+' stacked a second screen'
+
+    lost = boot_studio('window.__rejectSession=true')
+    assert_session_lost(lost, '403 Invalid session')
+    lost.close()
+    failed_beat = boot_studio('window.__failHeartbeat=true')
+    assert_session_lost(failed_beat, 'failed heartbeat')
+    failed_beat.close()
+    failed_poll = boot_studio('window.__failPoll=true')
+    assert_session_lost(failed_poll, 'failed poll')
+    failed_poll.close()
+    assert not errors, 'JS errors: '+repr(errors)
+    print('PASS: browser startup, capture, annotations, undo/redo, duplicate, PNG export, loaded library preview, hotkey capture handoff, smart redaction, host-side settings, non-destructive crop, theme toggle, tool shortcuts, heartbeat/beacon, End session, lost session')
     browser.close()

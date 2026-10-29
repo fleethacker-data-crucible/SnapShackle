@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -58,3 +58,51 @@ for source,text in (('index.html',ui),('assets/studio.js',studio),('assets/style
  assert 'assets/brand' not in text, source+' must not reference the README emblems'
 assert '/assets/ui/emblem-dark.png' in ui and '/assets/ui/emblem-light.png' in ui and '/assets/vendor/fleet/fleet.css' in ui and 'data-app="snapshackle"' in ui
 print('PASS: README emblems stay in assets/brand; the app uses its copies in assets/ui and the Fleet tokens')
+
+# Optional video sound: off unless chosen, and GIF / stills / scrolling capture stay silent.
+audio=(ROOT/'assets/audio.js').read_text(encoding='utf-8')
+assert 'src="/assets/audio.js"' in ui
+assert 'id="recordAudio"' in ui and 'id="recordMic"' in ui and 'id="recordMicRefresh"' in ui and 'id="recordAudioLive"' in ui
+assert 'for="recordAudio"' in ui and 'for="recordMic"' in ui
+assert 'aria-describedby="recordAudioHelp"' in ui and 'aria-live="polite"' in ui and 'role="status"' in ui
+assert 'SnapShackleAudio.prepareRecording' in studio
+assert 'shareScreen({video:{frameRate:settings.recordFps},audio:false})' in studio
+gif_fn=studio.split("$('#gif').onclick",1)[1].split("$('#scrollAuto').onclick",1)[0]
+assert 'getSharedScreen()' in gif_fn and 'prepareRecording' not in gif_fn and 'getUserMedia' not in gif_fn
+browser_fn=studio.split("$('#browserCapture').onclick",1)[1].split('const toolNames',1)[0]
+assert 'getSharedScreen()' in browser_fn and 'prepareRecording' not in browser_fn
+scroll_fn=studio.split("$('#scrollAuto').onclick",1)[1].split("$('#scrollAdd').onclick",1)[0]
+assert 'getSharedScreen()' in scroll_fn and 'prepareRecording' not in scroll_fn
+library=(ROOT/'modules/Library.ps1').read_text(encoding='utf-8')
+assert "recordAudio = 'off'" in library and 'recordMicId' in library
+assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
+assert 'normalizeMode' in audio and 'prepareRecording' in audio
+print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
+
+# A restarted server reuses the port. The old tab must say the session is gone, and the tray must
+# focus only the window for this start (port + start id), never a stale "SnapShackle Studio" tab.
+assert "(editor|studio|gif|stitch|redact|icons|theme|audio)" in host, 'audio.js must be served with the other studio scripts'
+assert "__STUDIO_TITLE__" in host and "__STUDIO_TITLE__" in ui and "__STUDIO_TITLE__" in studio
+assert "studioStartId" in host and "StudioTitle" in host and "$script:studioTitle" in host
+assert "SnapShackle Studio " in host
+assert "HttpWebRequest" not in host and "WebRequest]::Create" in host
+assert "/api/health" in host and "BrowserMessage" in host and "BrowserClosed" in host
+assert "did not answer /api/health" in host
+assert "X-SnapShackle-Token" in host
+stop_at = host.index("Stop-SnapShackleProcesses $searchDirs")
+still_at = host.index("Get-SnapShackleProcesses $searchDirs", stop_at)
+warn_at = host.index("still running", stop_at)
+assert still_at > stop_at and warn_at > still_at and "exit 1" in host[warn_at:warn_at+400]
+assert "Not starting another copy." in host
+assert "ActivateByTitle('SnapShackle Studio')" not in tray
+assert "StudioTitle" in tray and "ActivateByTitle($title)" in tray
+assert "TaskbarCreated" in tray and "ExplorerRestarted" in tray and "RegisterWindowMessage" in tray
+assert "string.IsNullOrEmpty(contains)" in native
+assert "reloadSession" in studio and "showSessionEnded('lost')" in studio
+assert "Invalid session" in studio and "location.reload" in studio
+beat = studio.split("function heartbeat", 1)[1].split("function leavingSignal", 1)[0]
+assert "showSessionEnded('lost')" in beat and ".catch(()=>{})" not in beat.split("if(leaving)", 1)[0]
+poll = studio.split("async function pollEvents", 1)[1].split("setInterval(pollEvents", 1)[0]
+assert poll.count("showSessionEnded('lost')") >= 2
+assert "SnapShackle Studio (stopped)" in studio
+print('PASS: session loss is visible, the tray matches only this start, health is checked, Explorer restart restores the icon')

@@ -20,16 +20,24 @@ namespace SnapShackle {
  public sealed class HotkeyWindow : NativeWindow, IDisposable {
   [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint key);
   [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern uint RegisterWindowMessage(string lpString);
   const int WM_HOTKEY=0x0312; const uint MOD_NOREPEAT=0x4000;
   public event Action<int> Pressed;
+  public event Action ExplorerRestarted;
   readonly List<int> ids=new List<int>();
-  public HotkeyWindow(){ CreateHandle(new CreateParams()); }
+  readonly int taskbarCreated;
+  public HotkeyWindow(){
+   // Default CreateParams is a top-level window, so it receives the TaskbarCreated broadcast.
+   CreateHandle(new CreateParams());
+   taskbarCreated=(int)RegisterWindowMessage("TaskbarCreated");
+  }
   public bool Register(int id, uint modifiers, uint key){
    if(RegisterHotKey(Handle,id,modifiers|MOD_NOREPEAT,key)){ids.Add(id);return true;}
    return false;
   }
   protected override void WndProc(ref Message m){
    if(m.Msg==WM_HOTKEY){var handler=Pressed;if(handler!=null)handler(m.WParam.ToInt32());return;}
+   if(taskbarCreated!=0 && m.Msg==taskbarCreated){var restarted=ExplorerRestarted;if(restarted!=null)restarted();}
    base.WndProc(ref m);
   }
   public void Dispose(){
@@ -80,6 +88,16 @@ $script:SnapShackleTrayScript = {
         $tray.Icon = [SnapShackle.TrayArt]::Make()
         $tray.Text = 'SnapShackle'
         $hotkeys = [SnapShackle.HotkeyWindow]::new()
+        # Explorer drops tray icons when it restarts. Put this one back on TaskbarCreated.
+        $hotkeys.add_ExplorerRestarted([Action]{
+            try {
+                $tray.Visible = $false
+                $previous = $tray.Icon
+                $tray.Icon = [SnapShackle.TrayArt]::Make()
+                $tray.Visible = $true
+                if ($previous) { $previous.Dispose() }
+            } catch {}
+        })
         $labels = @{}
         foreach ($entry in $Plan) {
             foreach ($chord in $entry.Chords) {
@@ -96,7 +114,11 @@ $script:SnapShackleTrayScript = {
             while ($Shared.Events.Count -gt 50) { $Shared.Events.RemoveAt(0) }
         }
         $openStudio = {
-            if (-not [SnapShackle.Native]::ActivateByTitle('SnapShackle Studio')) {
+            # Match only this session's window title. A stale tab from the previous server does not match.
+            $title = [string]$Shared.StudioTitle
+            $focused = $false
+            if ($title) { $focused = [SnapShackle.Native]::ActivateByTitle($title) }
+            if (-not $focused) {
                 $url = $Shared.BaseUrl
                 if ($Shared.LastName) { $url += '#open=' + $Shared.LastName }
                 Start-Process $url

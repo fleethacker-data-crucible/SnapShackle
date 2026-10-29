@@ -290,10 +290,10 @@ Test-Case 'Settings persist in a file and are sanitised' {
     try {
         $path = Join-Path $base 'settings.json'
         $fresh = Get-SnapShackleSettings $path
-        Assert-True (-not $fresh.saved -and $fresh.namePrefix -eq 'SnapShackle' -and $fresh.recordFps -eq 6 -and $fresh.stayInTray -eq $false) 'bad defaults'
+        Assert-True (-not $fresh.saved -and $fresh.namePrefix -eq 'SnapShackle' -and $fresh.recordFps -eq 6 -and $fresh.stayInTray -eq $false -and $fresh.recordAudio -eq 'off' -and $fresh.recordMicId -eq '') 'bad defaults'
         $null = Set-SnapShackleSettings $path ([pscustomobject]@{ namePrefix = 'My Shots!/..'; recordFps = 99; autoLibrary = $true; evil = 'x' })
         $saved = Get-SnapShackleSettings $path
-        Assert-True ($saved.saved -and $saved.namePrefix -eq 'MyShots' -and $saved.recordFps -eq 12 -and $saved.autoLibrary) "not sanitised: $($saved | ConvertTo-Json -Compress)"
+        Assert-True ($saved.saved -and $saved.namePrefix -eq 'MyShots' -and $saved.recordFps -eq 12 -and $saved.autoLibrary -and $saved.recordAudio -eq 'off' -and $saved.recordMicId -eq '') "not sanitised: $($saved | ConvertTo-Json -Compress)"
         Assert-True (-not $saved.Contains('evil')) 'unknown key stored'
         $null = Set-SnapShackleSettings $path @{ theme = 'neon' }
         Assert-True ((Get-SnapShackleSettings $path).theme -eq 'dark') 'invalid theme accepted'
@@ -306,6 +306,29 @@ Test-Case 'Settings persist in a file and are sanitised' {
         Assert-True ((Get-SnapShackleSettings $path).stayInTray -eq $true) 'stay-in-tray preference not saved'
         $null = Set-SnapShackleSettings $path ([pscustomobject]@{ stayInTray = 'yes' })
         Assert-True ((Get-SnapShackleSettings $path).stayInTray -eq $false) 'non-boolean stay-in-tray accepted as true'
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+
+Test-Case 'Record sound is off by default and invalid audio settings are ignored' {
+    $base = New-TempDir
+    try {
+        $path = Join-Path $base 'settings.json'
+        [IO.File]::WriteAllText($path, '{"namePrefix":"SnapShackle","recordFps":6}')
+        $old = Get-SnapShackleSettings $path
+        Assert-True ($old.recordAudio -eq 'off' -and $old.recordMicId -eq '') 'settings written before sound existed did not default to off'
+        $null = Set-SnapShackleSettings $path @{ recordAudio = 'BOTH'; recordMicId = 'mic_1' }
+        $on = Get-SnapShackleSettings $path
+        Assert-True ($on.recordAudio -eq 'both' -and $on.recordMicId -eq 'mic_1' -and $on.recordFps -eq 6) 'sound choice was not saved'
+        $null = Set-SnapShackleSettings $path @{ recordFps = 4 }
+        $kept = Get-SnapShackleSettings $path
+        Assert-True ($kept.recordAudio -eq 'both' -and $kept.recordMicId -eq 'mic_1' -and $kept.recordFps -eq 4) 'partial update dropped the sound choice'
+        $null = Set-SnapShackleSettings $path @{ recordAudio = 'surround'; recordMicId = 'bad id <mic>' }
+        $san = Get-SnapShackleSettings $path
+        Assert-True ($san.recordAudio -eq 'both') 'invalid sound mode replaced a saved choice'
+        Assert-True ($san.recordMicId -eq 'badidmic') "mic id not sanitised: $($san.recordMicId)"
+        $null = Set-SnapShackleSettings $path @{ recordAudio = 'off'; recordMicId = '' }
+        $back = Get-SnapShackleSettings $path
+        Assert-True ($back.recordAudio -eq 'off' -and $back.recordMicId -eq '') 'sound could not be turned back off'
     } finally { [IO.Directory]::Delete($base, $true) }
 }
 
