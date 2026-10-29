@@ -41,5 +41,8 @@ assert '[switch]$Stay' in host and '[switch]$Replace' in host and 'ValueFromRema
 assert 'PositionalBinding=$false' in host, '--stay must not bind to -Port'
 assert "Read-Host 'Stop it and start fresh? [Y/n]'" in host
 assert 'Get-SnapShackleProcesses' in host and 'Stop-SnapShackleProcesses' in host
+assert 'still running' in host and 'Not starting another copy.' in host and 'exit 1' in host
+assert 'WebRequest]::Create' in host and '/api/health' in host and 'BrowserMessage' in host
+assert "const api=(path,options={})=>fetch(path," in js and "showSessionEnded('lost')" in js and 'reloadSession' in js
 print('PASS: CutterMk.bat forwarding stub ships and forwards to Launch-SnapShackle.bat')
 print('PASS: process-only launcher, atomic loopback port fallback, dynamic browser URL, no HTTP.sys URL reservations, --stay/--replace passthrough')

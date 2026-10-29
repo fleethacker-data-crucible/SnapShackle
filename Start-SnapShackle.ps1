@@ -70,6 +70,12 @@ if ($running.Count -gt 0) {
     $answer = if ($Replace) { 'y' } else { Read-Host 'Stop it and start fresh? [Y/n]' }
     if ($answer -eq '' -or $answer -match '^[Yy]') {
         foreach ($stoppedPid in Stop-SnapShackleProcesses $searchDirs) { Write-Host ('  stopped PID ' + $stoppedPid) -ForegroundColor DarkGray }
+        $still = @(Get-SnapShackleProcesses $searchDirs)
+        if ($still.Count -gt 0) {
+            $left = ($still | ForEach-Object { 'PID ' + $_.Pid }) -join ', '
+            Write-Warning ('SnapShackle is still running (' + $left + ') after the stop request. Not starting another copy.')
+            exit 1
+        }
     } else {
         Write-Host 'Leaving the running SnapShackle alone. Use End session in its studio, Exit in its tray menu, or Stop-SnapShackle.ps1.' -ForegroundColor DarkGray
         $open = @($running | Where-Object { $_.Url } | Select-Object -First 1)
@@ -93,6 +99,9 @@ $Port = $server.Port
 if ($requestedPort -ne $Port) {
     Write-Host ("Preferred port $requestedPort is unavailable; using free loopback port $Port instead.") -ForegroundColor Yellow
 }
+# Port plus a new start id, so the tray can focus this studio and not a stale tab on the same URL.
+$script:studioStartId = [guid]::NewGuid().ToString('N').Substring(0, 8)
+$script:studioTitle = 'SnapShackle Studio ' + $Port + ' ' + $script:studioStartId
 
 function Send-Response($Context, [byte[]]$Bytes, [string]$ContentType='application/json', [int]$Status=200) {
     $response = $Context.Response
@@ -191,12 +200,12 @@ function Invoke-SnapShackleRequest($Context) {
     $origin=$request.Headers['Origin']
     if ($origin -and $origin -ne "http://127.0.0.1:$Port") { Send-Json $Context @{error='Origin is not authorized'} 403;return }
     if ($path -eq '/' -and $method -eq 'GET') {
-        $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SNAPSHACKLE_VERSION__',$SnapShackleVersion)
+        $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SNAPSHACKLE_VERSION__',$SnapShackleVersion).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
     }
-    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme)\.js$') {
+    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio)\.js$') {
         $filename=$Matches[1]+'.js'
-        $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken)
+        $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($source)) 'application/javascript; charset=utf-8';return
     }
     if ($method -eq 'GET' -and $path -eq '/assets/styles.css') {
@@ -341,7 +350,7 @@ $base="http://127.0.0.1:$Port/"
 $shared=[hashtable]::Synchronized(@{
     Events=[Collections.ArrayList]::Synchronized([Collections.ArrayList]::new()); NextId=0
     Quit=$false; Busy=$false; Hotkeys=@(); BaseUrl=$base; Server=$server; LastName=$null; TrayReady=$false; TrayIcon=$null
-    TrayStopped=$false; StopReason=$null; Stay=$false
+    TrayStopped=$false; StopReason=$null; Stay=$false; StudioTitle=$script:studioTitle; BrowserMessage=$null
 })
 # Lifecycle: auto-stop is on unless -Stay, SNAPSHACKLE_AUTO_STOP=0 (or the older CUTTERMK_AUTO_STOP=0),
 # or the "stay in the tray" preference (which needs a running tray, so there is always a visible Exit).
@@ -398,17 +407,55 @@ switch (Get-SnapShackleLifecycleMode) {
     'tray' { Write-Host 'Preference "stay in the tray" is on: SnapShackle keeps its hotkeys after the studio tab closes. Exit in the tray menu stops it.' }
     default { Write-Host 'Closing the studio tab stops SnapShackle, its tray icon and hotkeys (start with -Stay to keep them). Ctrl+C, End session or Exit in the tray menu also stop it.' }
 }
-if (-not $NoBrowser) {
-    try { Start-Process $base }
-    catch {
-        Write-Warning ('Browser did not open automatically: ' + $_.Exception.Message + '. Open ' + $base + ' manually.')
-        $presence.FirstContactBy=$null  # opening it by hand may take a while
+# The page is served on the accept thread below, so the health check has to run beside it.
+# Open the browser only after /api/health answers; a runspace warning would not show here.
+$script:SnapShackleOpenBrowser = {
+    param($Port, $Token, $Base, $Shared)
+    $url = 'http://127.0.0.1:' + $Port + '/api/health'
+    $opened = $false
+    for ($i = 0; $i -lt 50 -and -not $Shared.Quit -and -not $Shared.BrowserClosed; $i++) {
+        $resp = $null
+        try {
+            $req = [Net.WebRequest]::Create($url)
+            $req.Method = 'GET'
+            $req.Timeout = 1500
+            $req.ReadWriteTimeout = 1500
+            try { $req.Proxy = [Net.GlobalProxySelection]::GetEmptyWebProxy() } catch {}
+            $req.Headers.Add('X-SnapShackle-Token', [string]$Token)
+            try { $req.Host = '127.0.0.1:' + $Port } catch {}
+            $resp = $req.GetResponse()
+            if ([int]$resp.StatusCode -eq 200) {
+                if ($Shared.Quit -or $Shared.BrowserClosed) { break }
+                try { Start-Process $Base; $opened = $true }
+                catch { $Shared.BrowserMessage = 'Browser did not open automatically: ' + $_.Exception.Message + '. Open ' + $Base + ' manually.' }
+                break
+            }
+        } catch {
+            # Not accepting yet, or the request was refused. Try again.
+        } finally {
+            if ($null -ne $resp) { try { $resp.Close() } catch {} }
+        }
+        Start-Sleep -Milliseconds 100
     }
+    if (-not $opened -and -not $Shared.Quit -and -not $Shared.BrowserClosed -and -not $Shared.BrowserMessage) {
+        $Shared.BrowserMessage = 'SnapShackle did not answer /api/health before the browser opened. Open ' + $Base + ' manually.'
+    }
+}
+$browserWait = $null
+if (-not $NoBrowser) {
+    $browserWait = [PowerShell]::Create()
+    [void]$browserWait.AddScript($script:SnapShackleOpenBrowser).AddArgument($Port).AddArgument($sessionToken).AddArgument($base).AddArgument($shared)
+    [void]$browserWait.BeginInvoke()
 }
 try {
     while (-not $shared.Quit) {
         $context=$null
         try {
+            if ($shared.BrowserMessage) {
+                Write-Warning ([string]$shared.BrowserMessage)
+                $shared.BrowserMessage = $null
+                $presence.FirstContactBy = $null
+            }
             if ($null -ne $stopEvent -and $stopEvent.WaitOne(0)) { $script:stopReason='Stop-SnapShackle.ps1 or a new launch asked SnapShackle to stop.'; break }
             # A gap since the last pass (the PC slept, or a long region selection held this thread) means the
             # tabs could not be heard: they get a fresh grace period.
@@ -439,6 +486,11 @@ try {
     }
 } finally {
     if (-not $script:stopReason -and $shared.StopReason) { $script:stopReason=$shared.StopReason }
+    $shared.BrowserClosed = $true
+    if ($null -ne $browserWait) {
+        try { $browserWait.Stop() } catch {}
+        finally { $browserWait.Dispose() }
+    }
     # A hotkey capture may still be saving to the library: let it finish (bounded) before the tray goes.
     for ($i=0; $i -lt 300 -and $shared.Busy; $i++) { Start-Sleep -Milliseconds 100 }
     $shared.Quit=$true

@@ -7,7 +7,7 @@ Local web apps: PowerShell 5.1 serves a browser UI on `127.0.0.1` (Edge/Chrome).
 | Layer | Choice |
 | --- | --- |
 | Launcher | `.bat` → `powershell.exe -File` |
-| Local server | PowerShell 5.1 + `TcpListener` on `127.0.0.1` |
+| Local server | PowerShell 5.1 + `TcpListener` on `127.0.0.1` (default), or `HttpListener` on loopback prefixes (see Local server note) |
 | UI | React 19 + TypeScript, or Svelte 5 |
 | Styling | Tailwind CSS 4 + shadcn-style (CVA, Radix, Lucide) |
 | Charts / diagrams / motion | Apache ECharts, React Flow, Motion |
@@ -15,11 +15,22 @@ Local web apps: PowerShell 5.1 serves a browser UI on `127.0.0.1` (Edge/Chrome).
 | Storage | IndexedDB (data), localStorage (settings) |
 | Offline | Service workers, Web Workers |
 | Encryption | Web Crypto (AES-GCM) in browser; DPAPI from PowerShell for secrets at rest |
-| Native Windows | C# via `Add-Type` (.NET 4.8.1); WinForms/WPF from PowerShell if needed |
+| Native Windows | C# ships as source and is compiled at start by Windows PowerShell 5.1 `Add-Type` (inbox .NET Framework compiler, C# 5 only); framework assemblies only; P/Invoke only into OS DLLs; WinForms/WPF from PowerShell if needed |
+
+## Local server note
+
+Tested on the workstation with the Nautilus Test Suite (Windows 11 Enterprise 26200, Windows PowerShell 5.1, standard user): `TcpListener` on 2026-10-24, `HttpListener` on 2026-10-25.
+
+- `TcpListener` on `127.0.0.1` is the default.
+- `HttpListener` is allowed on `http://127.0.0.1:<port>/`, `http://localhost:<port>/` or both. All three passed with no admin rights or URL reservation. Never use `+`, `*` or a host name: those need admin. An app that uses `HttpListener` says so in its "how it applies" section.
+- HTTP.sys does not filter the `Host` header on loopback, so every server checks `Host` and `Origin` itself, whichever listener it uses.
+- Details: [LISTENER-EVALUATION.md](https://github.com/fleethacker-data-crucible/fleethacker-comms-data-crucible/blob/main/docs/LISTENER-EVALUATION.md) in the team repo.
 
 ## Build rules
 
 - Build off-workstation; ship compiled JS/CSS/WASM only
+- Never ship or load a prebuilt or custom DLL (`Add-Type -Path *.dll`, `Assembly.Load*`, a compiled DLL cached on disk): the workstation's application control blocks them (confirmed on the workstation 2026-10-26)
+- No third-party DLLs or NuGet packages; use framework assemblies only
 - Bundle all deps — no CDNs or runtime network calls
 - No admin, installers, or services on the workstation
 
