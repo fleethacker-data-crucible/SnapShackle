@@ -2,7 +2,7 @@
 
 Capture a window or region, annotate and redact it, read its text, and keep it in a searchable library.
 
-> **Draft walkthrough.** The screenshots below have not been added yet. They must use demo data and be reviewed before publication. The image links will resolve when those screenshots are included.
+> **Illustrated walkthrough.** These seven screenshots show the Windows studio with a synthetic maintenance note. The images were reviewed for visible sensitive content before inclusion.
 
 ## Before you start
 
@@ -21,40 +21,42 @@ The studio opens with the capture toolbar and an empty **Library** tab.
 
 ### 2. Capture a window
 
-Open **Capture**, choose **application window** and pick the window you want.
+Choose a window in **Choose application window** at the top, then click **Window** in the left capture toolbar. This example captures a dedicated demo note, not the whole desktop.
 
-![SnapShackle Capture menu with Choose application window open and the demo Notepad window selected.](../assets/walkthrough/02-capture-window.png)
+![SnapShackle studio after native window capture, with the synthetic demo note selected in Choose application window.](../assets/walkthrough/02-capture-window.png)
 
 ### 3. Annotate
 
-Use the annotation tools to add arrows, shapes and text.
+Select **Arrow** and drag toward the inspection status. Use **Steps** to add a numbered callout. **Layers** lists the annotations so you can select and adjust them.
 
-![SnapShackle editor with the demo capture, an arrow and a text label added with the annotation tools.](../assets/walkthrough/03-annotate.png)
+![SnapShackle editor with the demo capture, an arrow and a numbered step added, with both annotations listed in Layers.](../assets/walkthrough/03-annotate.png)
 
 ### 4. Redact
 
-Cover anything sensitive with a redaction box before you share the image.
+Select **Redact** and drag a solid box over the value to hide. Here it covers a dummy account value. Share a flattened PNG; an editable project retains the original image and its annotations.
 
 ![SnapShackle editor with the demo account line covered by a redaction box.](../assets/walkthrough/04-redact.png)
 
 ### 5. Read the text
 
-**Extracted text** shows the text read from the capture, ready to copy.
+Open **Workflows** and click **Extract text**. Windows OCR fills **Extracted text**, ready to review and copy. In this example the text contains the equipment and inspection status, while the covered dummy account value is absent. Always review OCR before using it.
 
 ![SnapShackle Extracted text panel showing the text read from the demo capture.](../assets/walkthrough/05-extract-text.png)
 
 ### 6. Find it later
 
-**Library** keeps your captures, searchable by their text.
+In **Library**, click **Save current**. Add tags and notes, then **Save details**. Searching for **Training pump** finds this capture through its extracted text, as shown.
 
 ![SnapShackle Library tab listing the saved demo capture with its thumbnail and the search box.](../assets/walkthrough/06-library.png)
 
-### 7. Set hotkeys
+### 7. Choose session and recording settings
 
-**Workflows** holds the hotkeys and the option to keep them in the tray after the tab closes.
+Scroll to **Settings** in **Workflows**. **Keep hotkeys in the tray after this tab closes** controls whether the session stays available after the studio closes. This screenshot also shows recording frame rate, sound off, and the Dark theme. See [Session lifecycle](../../README.md#session-lifecycle) for the exact startup and shutdown options.
 
-![SnapShackle Workflows tab with the hotkey and tray settings.](../assets/walkthrough/07-workflows-settings.png)
+![SnapShackle Workflows settings showing the tray option, recording frame rate, sound off and Dark theme.](../assets/walkthrough/07-workflows-settings.png)
 
 ## About these images
 
-Screenshots will be stored in [`docs/assets/walkthrough/`](../assets/walkthrough/), named `NN-<screen>.png` after their step. Capture them at 1440x900, 100% scale, in the Dark theme, using demo data only. Review them for sensitive content before adding them.
+Captured 29 October 2026 from the Windows application at a 1440x900 browser viewport, 100% browser scale, in the Dark theme. Images are stored in [`docs/assets/walkthrough/`](../assets/walkthrough/). The native source window contains synthetic data only, and the capture library uses an isolated demo profile.
+
+Native window capture, annotation, redaction, Windows OCR, saving and OCR-text search were exercised. Global hotkeys were not registered during this documentation session, and audio/video recording was not exercised. The settings screenshot shows the available choices.
