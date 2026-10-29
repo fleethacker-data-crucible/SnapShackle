@@ -200,7 +200,7 @@ input[type='range'] { accent-color: var(--color-primary); cursor: pointer; }
 .tool .icon { width: 16px; height: 16px; }
 .tool:hover { background: var(--color-muted); color: var(--color-foreground); }
 .tool.active { background: var(--color-sidebar-active); color: var(--color-foreground); border-color: color-mix(in srgb, var(--color-primary) 35%, transparent); }
-.tool.active .icon { color: var(--color-ring); }
+.tool.active .icon { color: var(--color-foreground); }
 .tool-key { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--color-muted-foreground); opacity: 0.7; }
 .side-footer {
   display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 9px 10px;
