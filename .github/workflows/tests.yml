@@ -12,6 +12,7 @@ defaults:
     shell: powershell
 jobs:
   windows:
+    timeout-minutes: 30
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
