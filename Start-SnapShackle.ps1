@@ -487,7 +487,10 @@ try {
 } finally {
     if (-not $script:stopReason -and $shared.StopReason) { $script:stopReason=$shared.StopReason }
     $shared.BrowserClosed = $true
-    if ($null -ne $browserWait) { try { [void]$browserWait.BeginStop($null, $null) } catch {} }
+    if ($null -ne $browserWait) {
+        try { $browserWait.Stop() } catch {}
+        finally { $browserWait.Dispose() }
+    }
     # A hotkey capture may still be saving to the library: let it finish (bounded) before the tray goes.
     for ($i=0; $i -lt 300 -and $shared.Busy; $i++) { Start-Sleep -Milliseconds 100 }
     $shared.Quit=$true
