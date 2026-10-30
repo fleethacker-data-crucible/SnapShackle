@@ -133,7 +133,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 | Editor | Arrows, boxes, ellipses, lines, pen, highlighter, text, numbered steps, opaque redaction, pixelate, blur; layer reordering; drag and corner resizing; object duplication/deletion | Some object transforms remain simplified; complex multi-object grouping not available |
 | History/project | Undo/redo, editable JSON project, crop, image import/paste/drag-drop, PNG/JPEG, clipboard, zoom | Save editable JSON **only for trusted local use**, since it includes the original pixels |
 | Library | Save PNGs locally, browse thumbnails, search names/tags/notes, edit tags/notes, delete | No cloud sync or SQLite, limited to newest 250 search hits |
-| Screen video | WebM via browser MediaRecorder. Optional sound is off until chosen: system or tab audio, a microphone, or both mixed into one Opus track | No MP4 without additional codecs. System audio needs Share audio ticked in the Edge or Chrome prompt. A declined microphone or missing Share audio records video only. GIF stays silent. Sound stays on this computer |
+| Screen video | WebM, or MP4 (H.264) where Edge or Chrome can write it, via browser MediaRecorder; choose under Workflows, Settings, Video file format. Optional sound is off until chosen: system or tab audio, a microphone, or both mixed into one Opus track | MP4 depends on the browser's own encoder: if it cannot write MP4 the recording is WebM and the status bar says so. No transcoding, trimming or timeline editing. System audio needs Share audio ticked in the Edge or Chrome prompt. A declined microphone or missing Share audio records video only. GIF stays silent. Sound stays on this computer |
 | Animated GIF | Offline dependency-free encoder; 640×480 max, 100 frames | 3-3-2 limited palette, unoptimized file sizes; tested for valid GIF decoding |
 | Long screenshots | Automatic overlap-aware stitching of multiple screenshots; optional browser shared-screen sampling while **you scroll the target** | Not an autonomous scroll driver for arbitrary Windows apps; sticky headers/transitions can reduce stitching quality |
 | OCR | Attempts Windows.Media.Ocr on PowerShell 5.1 where WinRT is available; tries browser TextDetector otherwise | Windows integration is **experimental and untested on a real Windows system**; browser API often missing |
@@ -148,7 +148,7 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 - No universal autonomous scrolling through arbitrary external applications.
 - No guaranteed OCR on every locked-down workstation.
 - No signed installer, MSI, policy-managed settings, centralized telemetry, update service, multi-user permissions, or full enterprise accessibility certification.
-- No Snagit parity for panoramic capture, camera/PIP recording, timeline video editing, multi-track audio editing, MP4 export, enterprise managed deployment, or share-destination integrations.
+- No Snagit parity for panoramic capture, camera/PIP recording, timeline video editing, multi-track audio editing, enterprise managed deployment, or share-destination integrations.
 
 ## Testing and development
 
@@ -167,7 +167,8 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API, including a lost session (invalid session, failed heartbeat, or failed poll) and the Reload button.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
-- `node tests/audio_test.js` checks the record-sound choices and the video-only fallback when Share audio or the microphone is unavailable.
+- `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
+- `python tests/mp4_record_test.py` records a synthetic canvas in installed Edge (then Chrome) and checks the bytes are a real MP4 (`ftyp` box) and a real WebM. It skips with a message if no installed browser can write MP4; Playwright's bundled Chromium cannot.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
 Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR integrations, or enterprise managed-workstation compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
