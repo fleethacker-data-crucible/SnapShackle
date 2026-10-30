@@ -35,6 +35,12 @@ jobs:
           $ErrorActionPreference = 'Continue'
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\windows_port_smoke.ps1
           if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
+      - name: Share routes (real host, temporary data folder)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\share_api_test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
       - name: Native capture benchmark
         # Needs an interactive desktop. A runner installed as a service has none, so this step may be skipped.
         continue-on-error: true

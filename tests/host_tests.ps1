@@ -536,6 +536,80 @@ if ($onWindows) {
     }
 }
 
+Test-Case 'Share: folder paths accept drive and UNC folders and refuse anything else' {
+    foreach ($ok in @('C:\Users\me\OneDrive\Shots', 'D:/Team/Shots', '\\server\share\shots', '\\files.corp.local\team\shots', 'E:\')) {
+        Assert-True ($null -ne (ConvertTo-SnapShackleSharePath $ok)) "should accept: $ok"
+    }
+    Assert-True ((ConvertTo-SnapShackleSharePath 'D:/Team/Shots') -eq 'D:\Team\Shots') 'slashes not normalised'
+    Assert-True ((ConvertTo-SnapShackleSharePath '"C:\Shots\"') -eq 'C:\Shots') 'quotes and trailing slash not trimmed'
+    foreach ($bad in @('', 'shots', '..\shots', 'C:\a\..\b', 'C:\a\.\b', '\\.\pipe\x', '\\?\C:\x', '\\server', 'C:\a|b', 'C:\a?b', 'C:\a*b', 'http://example.com/x', 'ftp://x/y', 'C:', ('C:\' + ('x' * 300)))) {
+        Assert-True ($null -eq (ConvertTo-SnapShackleSharePath $bad)) "should refuse: $bad"
+    }
+}
+Test-Case 'Share: folder list keeps at most 8 clean, uniquely named entries' {
+    $in = @(
+        @{ name = 'Team drive'; path = '\\server\share\shots' }, @{ name = 'team DRIVE'; path = 'C:\Other' },
+        @{ name = 'clipboard'; path = 'C:\Nope' }, @{ name = 'Bad path'; path = 'relative\x' }, @{ name = ''; path = 'C:\Blank' },
+        @{ name = 'Name <b>!'; path = 'C:\Shots' })
+    $out = ConvertTo-SnapShackleShareFolders $in
+    Assert-True ($out.Count -eq 2) ('expected 2 entries, got ' + $out.Count)
+    Assert-True ($out[0].name -eq 'Team drive' -and $out[1].name -eq 'Name b') "names: $($out | ConvertTo-Json -Compress)"
+    $many = 1..20 | ForEach-Object { @{ name = "F$_"; path = "C:\F$_" } }
+    Assert-True ((ConvertTo-SnapShackleShareFolders $many).Count -eq 8) 'not capped at 8'
+    Assert-True ((ConvertTo-SnapShackleShareFolders $null).Count -eq 0) 'null should give an empty list'
+}
+Test-Case 'Share: folders are saved with the settings and survive partial updates' {
+    $base = Join-Path ([IO.Path]::GetTempPath()) ('ss-share-' + [guid]::NewGuid().ToString('N'))
+    [void][IO.Directory]::CreateDirectory($base)
+    try {
+        $path = Join-Path $base 'settings.json'
+        Assert-True (@((Get-SnapShackleSettings $path).shareFolders).Count -eq 0) 'share folders should default to none'
+        $null = Set-SnapShackleSettings $path (ConvertFrom-Json '{"shareFolders":[{"name":"Team","path":"C:\\Team\\Shots"},{"name":"Bad","path":"nope"}]}')
+        $got = Get-SnapShackleSettings $path
+        Assert-True (@($got.shareFolders).Count -eq 1 -and $got.shareFolders[0].name -eq 'Team' -and $got.shareFolders[0].path -eq 'C:\Team\Shots') "not saved: $($got | ConvertTo-Json -Compress -Depth 5)"
+        $null = Set-SnapShackleSettings $path @{ recordFps = 5 }
+        Assert-True (@((Get-SnapShackleSettings $path).shareFolders).Count -eq 1) 'a partial update dropped the share folders'
+        $null = Set-SnapShackleSettings $path @{ shareFolders = @() }
+        Assert-True (@((Get-SnapShackleSettings $path).shareFolders).Count -eq 0) 'share folders could not be cleared'
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+Test-Case 'Share: copying to a folder never overwrites and clipboard/open use the injected actions' {
+    $base = Join-Path ([IO.Path]::GetTempPath()) ('ss-share-' + [guid]::NewGuid().ToString('N'))
+    $lib = Join-Path $base 'lib'; $dest = Join-Path $base 'dest'
+    [void][IO.Directory]::CreateDirectory($lib); [void][IO.Directory]::CreateDirectory($dest)
+    try {
+        $png = Join-Path $lib 'SnapShackle-test.png'
+        [IO.File]::WriteAllBytes($png, [byte[]](137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3))
+        $settings = @{ shareFolders = @(@{ name = 'Team'; path = $dest }, @{ name = 'Gone'; path = (Join-Path $base 'missing') }) }
+        $r1 = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind folder -Destination 'team'
+        Assert-True ($r1.name -eq 'SnapShackle-test.png' -and [IO.File]::Exists($r1.path)) 'first copy missing'
+        $r2 = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind folder -Destination 'Team'
+        Assert-True ($r2.name -eq 'SnapShackle-test (2).png') "second copy should get a new name, got $($r2.name)"
+        [IO.File]::WriteAllBytes($r1.path, [byte[]](9, 9, 9))
+        $r3 = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind folder -Destination 'Team'
+        Assert-True ($r3.name -eq 'SnapShackle-test (3).png' -and [IO.File]::ReadAllBytes($r1.path).Length -eq 3) 'an existing file was overwritten'
+        Assert-True ((Compare-Object ([IO.File]::ReadAllBytes($png)) ([IO.File]::ReadAllBytes($r2.path))) -eq $null) 'copy differs from the capture'
+        foreach ($case in @(@('folder', 'Nope', 'Unknown share folder'), @('folder', 'Gone', 'not found or is offline'), @('upload', '', 'Unknown share kind'))) {
+            $msg = ''
+            try { $null = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind $case[0] -Destination $case[1] } catch { $msg = $_.Exception.Message }
+            Assert-True ($msg -like ('*' + $case[2] + '*')) ("expected '" + $case[2] + "' for " + $case[0] + '/' + $case[1] + ', got: ' + $msg)
+        }
+        $msg = ''
+        try { $null = Invoke-SnapShackleShare -Library $lib -CapturePath (Join-Path $lib 'SnapShackle-none.png') -Settings $settings -Kind open } catch { $msg = $_.Exception.Message }
+        Assert-True ($msg -like '*Capture not found*') 'a missing capture should be reported'
+        $script:seen = @()
+        $clip = { param($p) $script:seen += ('clip:' + [IO.Path]::GetFileName($p)) }
+        $open = { param($p, $inExplorer) $script:seen += ('open:' + $inExplorer + ':' + [IO.Path]::GetFileName($p)) }
+        $c = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind clipboard -ClipboardAction $clip -OpenAction $open
+        $v = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind reveal -ClipboardAction $clip -OpenAction $open
+        $o = Invoke-SnapShackleShare -Library $lib -CapturePath $png -Settings $settings -Kind open -ClipboardAction $clip -OpenAction $open
+        Assert-True (($script:seen -join ',') -eq 'clip:SnapShackle-test.png,open:True:SnapShackle-test.png,open:False:SnapShackle-test.png') ('actions: ' + ($script:seen -join ','))
+        Assert-True ($c.kind -eq 'clipboard' -and $v.kind -eq 'reveal' -and $o.kind -eq 'open') 'kinds not reported'
+        $list = Get-SnapShackleShareDestinations $settings
+        Assert-True ($list.Count -eq 5 -and $list[0].available -and -not $list[1].available -and $list[2].kind -eq 'clipboard') ('destination list: ' + ($list | ConvertTo-Json -Compress -Depth 4))
+    } finally { [IO.Directory]::Delete($base, $true) }
+}
+
 Test-Case 'Every PowerShell file parses' {
     $errors = @()
     Get-ChildItem -Path $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {

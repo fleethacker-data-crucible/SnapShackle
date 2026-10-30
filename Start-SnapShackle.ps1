@@ -303,6 +303,18 @@ function Invoke-SnapShackleRequest($Context) {
         $result=Invoke-SnapShackleOcr $bytes
         Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
     }
+    if ($path -eq '/api/share' -and $method -eq 'GET') {
+        [object[]]$destinations = Get-SnapShackleShareDestinations (Get-SnapShackleSettings $settingsPath)
+        Send-Json $Context @{destinations=$destinations};return
+    }
+    if ($path -eq '/api/share' -and $method -eq 'POST') {
+        $share=[Text.Encoding]::UTF8.GetString((Read-Body $Context 16384)) | ConvertFrom-Json
+        try {
+            $result=Invoke-SnapShackleShare -Library $library -CapturePath (Get-SafeCapturePath ([string]$share.capture)) -Settings (Get-SnapShackleSettings $settingsPath) -Kind ([string]$share.kind) -Destination ([string]$share.destination)
+            Send-Json $Context $result
+        } catch { Send-Json $Context @{error=$_.Exception.Message} 400 }
+        return
+    }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
         # The list comes back as one array object (return ,$array); @(...) around it would nest it as
         # items:[[...]], which the studio rendered as a single broken card ("Invalid Date").
