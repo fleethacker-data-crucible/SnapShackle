@@ -137,7 +137,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 | Share | Library panel, Share: copy a capture into a folder you set up (OneDrive or SharePoint sync folder, network share, USB drive; up to 8, never overwrites), put the file on the clipboard to paste into Outlook or Teams, show it in Explorer, or open it in the default app | Local only: SnapShackle makes no network calls and holds no tokens, so there is no direct Slack, Teams, Confluence, Jira or e-mail upload. A cloud service gets the file only when its own desktop app syncs the folder. Folder must already exist |
 | Animated GIF | Offline dependency-free encoder; 640×480 max, 100 frames | 3-3-2 limited palette, unoptimized file sizes; tested for valid GIF decoding |
 | Long screenshots | Automatic overlap-aware stitching of multiple screenshots; optional browser shared-screen sampling while **you scroll the target** | Not an autonomous scroll driver for arbitrary Windows apps; sticky headers/transitions can reduce stitching quality |
-| OCR | Attempts Windows.Media.Ocr on PowerShell 5.1 where WinRT is available; tries browser TextDetector otherwise | Windows integration is **experimental and untested on a real Windows system**; browser API often missing |
+| OCR | Attempts Windows.Media.Ocr on PowerShell 5.1 where WinRT is available; tries browser TextDetector otherwise | Windows integration is tested on Windows 11 with synthetic images (`tests/windows_ocr_test.ps1`: text, word boxes, oversize images, blank image); not yet checked on a managed workstation or with non-English language packs. Browser API often missing |
 | UI | Offline red/black workspace, Library/Layers/Workflows tabs, editable layers, status diagnostics with per-stage capture timings, common focused-tab keyboard shortcuts | Not yet a fully audited accessible enterprise desktop application |
 
 ### Redaction safety
@@ -147,7 +147,7 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 ### Known gaps
 
 - No universal autonomous scrolling through arbitrary external applications.
-- No guaranteed OCR on every locked-down workstation.
+- OCR is validated on Windows 11 only with English synthetic text; run `tests/windows_ocr_test.ps1 -RequireOcr` on each managed workstation before relying on it.
 - No signed installer, MSI, policy-managed settings, centralized telemetry, update service, multi-user permissions, or full enterprise accessibility certification.
 - No Snagit parity for panoramic capture, camera/PIP recording, timeline video editing, multi-track audio editing, MP4 export, enterprise managed deployment, or direct cloud share-destination integrations (Slack, Teams, Confluence, Jira): sharing is limited to folders, the clipboard, Explorer and the default app.
 
@@ -164,6 +164,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/static_check.py` checks source structure/routes and UI wiring.
 - `python tests/launcher_static_check.py` verifies launcher settings, TCP adapter, and dynamic port propagation.
 - `tests/windows_port_smoke.ps1` verifies localhost collision behavior on Windows 5.1 (requires user-authorized runtime).
+- `powershell -NoProfile -STA -File tests/windows_ocr_test.ps1` runs the Windows OCR bridge on text drawn in memory (no screen capture). It skips with a message where OCR is missing; add `-RequireOcr` to fail instead.
 - `tests/windows_capture_perf.ps1 -DesktopCapture` verifies pixel-perfect source-bitmap crops and prints native capture and PNG encoding timings on Windows.
 - `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API, including a lost session (invalid session, failed heartbeat, or failed poll) and the Reload button.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
@@ -173,7 +174,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `node tests/audio_test.js` checks the record-sound choices and the video-only fallback when Share audio or the microphone is unavailable.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
-Automated Chromium tests **do not** verify the native Windows capture/WinRT OCR integrations, or enterprise managed-workstation compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
+Automated Chromium tests **do not** verify the native Windows capture integration or enterprise managed-workstation compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
 
 ## Project structure
 
