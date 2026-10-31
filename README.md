@@ -166,6 +166,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/launcher_static_check.py` verifies launcher settings, TCP adapter, and dynamic port propagation.
 - `tests/windows_port_smoke.ps1` verifies localhost collision behavior on Windows 5.1 (requires user-authorized runtime).
 - `powershell -NoProfile -STA -File tests/windows_ocr_test.ps1` runs the Windows OCR bridge on text drawn in memory (no screen capture). It skips with a message where OCR is missing; add `-RequireOcr` to fail instead.
+- `tools/evidence-capture.ps1` makes repeatable, redacted evidence screenshots from a manifest of named synthetic windows (see [docs/EVIDENCE-CAPTURE.md](docs/EVIDENCE-CAPTURE.md)). Its tests: `tests/redact_ps_test.ps1` (patterns and box drawing, no OCR), `tests/evidence_capture_test.ps1` (end to end with real OCR on synthetic windows; skips without OCR, `-RequireOcr` fails instead) and `python tests/redact_flow_test.py` (the studio's redaction messages).
 - `tests/windows_capture_perf.ps1 -DesktopCapture` verifies pixel-perfect source-bitmap crops and prints native capture and PNG encoding timings on Windows.
 - `python tests/browser_smoke.py` runs actual Chromium editor interactions against a simulated local capture API, including a lost session (invalid session, failed heartbeat, or failed poll) and the Reload button.
 - `python tests/stitch_test.py` tests seam detection with overlapping synthetic screenshots.
@@ -194,6 +195,8 @@ modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
+modules/Redact.ps1         Sensitive-text detection and redaction boxes for scripts (mirrors assets/redact.js)
+tools/                     evidence-capture.ps1 and its sample manifest (not needed at runtime)
 modules/Share.ps1          Share destinations: folder copy, clipboard file, Explorer, default app
 modules/Tray.ps1           Global hotkeys and tray icon on their own STA thread
 modules/Lifecycle.ps1      Tab-owns-the-server presence rule, runtime files, finding/stopping instances
