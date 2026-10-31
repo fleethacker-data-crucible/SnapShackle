@@ -1,6 +1,8 @@
 # Capture library helpers shared by the HTTP host and the hotkey/tray thread.
 . (Join-Path $PSScriptRoot 'Share.ps1')
-# Each capture NAME.png may have a sidecar NAME.png.meta.json: {tags, note, ocr}.
+# Each capture NAME.png may have a sidecar NAME.png.meta.json: {schema, tags, note, ocr}. The format is a contract
+# other Fleet apps read: docs/CAPTURE-FORMAT.md. tests/capture_format_test.ps1 checks a real sidecar against it.
+$script:SnapShackleCaptureSchema = 'snapshackle.capture/1'
 function New-SnapShackleCaptureName {
     'SnapShackle-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8) + '.png'
 }
@@ -32,7 +34,7 @@ function Set-SnapShackleMeta([string]$Library, [string]$Name, [hashtable]$Change
     $tags = @($meta.tags | Select-Object -First 20 | ForEach-Object { $v = [string]$_; $v.Substring(0, [Math]::Min(40, $v.Length)) })
     $note = [string]$meta.note; if ($note.Length -gt 2000) { $note = $note.Substring(0, 2000) }
     $ocr = [string]$meta.ocr; if ($ocr.Length -gt 20000) { $ocr = $ocr.Substring(0, 20000) }
-    $json = ConvertTo-Json -InputObject ([ordered]@{ tags = $tags; note = $note; ocr = $ocr }) -Depth 4
+    $json = ConvertTo-Json -InputObject ([ordered]@{ schema = $script:SnapShackleCaptureSchema; tags = $tags; note = $note; ocr = $ocr }) -Depth 4
     [IO.File]::WriteAllText((Get-SnapShackleMetaPath $Library $Name), $json, [Text.UTF8Encoding]::new($false))
 }
 # Recognises the capture's text and stores it for search. Silent no-op without native OCR.
