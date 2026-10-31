@@ -31,6 +31,7 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           node tests/webcam_test.js
           if ($LASTEXITCODE) { exit 1 }
+          node tests/voice_test.js
           node tests/aisuggest_test.js
           if ($LASTEXITCODE) { exit 1 }
       - name: Loopback port fallback (real Windows sockets)

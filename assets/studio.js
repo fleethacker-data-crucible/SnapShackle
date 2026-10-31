@@ -14,6 +14,7 @@ function noteInvalidSession(response){
 }
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}}).then(noteInvalidSession);
 const canvas=$('#canvas');
+let voiceSession=null,voiceAudio=null,voiceIndex=-1,voiceType='';
 let layerFieldsBusy=false;
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
 let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',recordCamera:'off',recordCameraCorner:'br',recordCameraSize:'medium',recordCameraId:'',shareFolders:[],recordFormat:'webm',aiSuggest:'off',aiPrivacy:'local'};
@@ -40,8 +41,9 @@ const editor=new SnapShackleEditor(canvas,(instance)=>{
   $('#dims').textContent=instance.canvas.width+' × '+instance.canvas.height;
   // Pointer movement redraws the canvas frequently. Rebuild layer buttons ONLY when
   // their contents or the selected layer changed, not for every pen/drag frame.
+  refreshVoice(instance);
   refreshLayerFields(instance);
-  const signature=instance.selected+'|'+instance.objects.map(o=>o.type+':'+(o.text||'')).join('|');
+  const signature=instance.selected+'|'+instance.objects.map(o=>o.type+':'+(o.text||'')+(o.voice?'#v'+o.voice.ms:'')).join('|');
   if(signature===lastLayersSignature)return;
   lastLayersSignature=signature;
   const layerRoot=$('#layers');
@@ -49,7 +51,7 @@ const editor=new SnapShackleEditor(canvas,(instance)=>{
   const focusedLayer=layerRoot.contains(document.activeElement)?document.activeElement.dataset.layer:null;
   layerRoot.replaceChildren();
   for(let i=instance.objects.length-1;i>=0;i--){let object=instance.objects[i];let button=document.createElement('button');button.className=i===instance.selected?'active':'';
-    button.textContent=`${i+1}. ${object.type}${object.type==='text'?': '+(object.text||'').slice(0,22):''}`;
+    button.textContent=`${i+1}. ${object.type}${object.type==='text'?': '+(object.text||'').slice(0,22):''}${object.voice?' (voice '+SnapShackleVoice.formatDuration(object.voice.ms)+')':''}`;
     button.dataset.layer=String(i);button.setAttribute('aria-pressed',i===instance.selected?'true':'false');
     button.onclick=()=>{instance.selected=i;instance.render()};layerRoot.append(button)}
   if(focusedLayer!==null)layerRoot.querySelector(`[data-layer="${focusedLayer}"]`)?.focus();
@@ -335,6 +337,37 @@ async function recognize(){
   return {text:found.map(x=>x.rawValue).join('\n'),lines:SnapShackleRedact.fromTextDetector(found),engine:'Browser OCR'};
 }
 $('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
+// Voice notes on annotations (assets/voice.js). Local only: the microphone is open only while recording and the clip
+// lives on the annotation (so Undo, Redo and an editable project carry it). Nothing is uploaded.
+function selectedObject(){return editor.selected>=0?editor.objects[editor.selected]:null}
+function refreshVoice(source){
+  const from=source||editor,o=from.selected>=0?from.objects[from.selected]:null,recording=!!voiceSession;
+  $('#voiceRecord').textContent=recording?'Stop recording':'Record';$('#voiceRecord').disabled=!recording&&!o;
+  for(const id of ['voicePlay','voiceSave','voiceDelete'])$('#'+id).disabled=recording||!o?.voice;
+  if(!recording)$('#voiceStatus').textContent=!o?'Select an annotation, then Record.':(o.voice?SnapShackleVoice.describe(o.voice)+' on this annotation. It stays on this computer.':'No voice note on this annotation.');
+}
+function attachVoice(note){
+  const o=editor.objects[voiceIndex];
+  if(!note)return refreshVoice();
+  if(!o||o.type!==voiceType)return notify('The annotation changed while recording, so the voice note was not kept');
+  const before=editor.state();o.voice=note;editor.saveHistory(before);editor.render();
+  notify('Voice note saved on the annotation ('+SnapShackleVoice.formatDuration(note.ms)+'). It stays on this computer.');
+}
+$('#voiceRecord').onclick=async()=>{
+  try{
+    if(voiceSession){voiceSession.stop().catch(()=>{});return}
+    const o=selectedObject();if(!o)return notify('Select an annotation first');
+    voiceIndex=editor.selected;voiceType=o.type;
+    const session=await SnapShackleVoice.start({getUserMedia:c=>navigator.mediaDevices.getUserMedia(c),MediaRecorder:window.MediaRecorder,isTypeSupported:t=>window.MediaRecorder&&MediaRecorder.isTypeSupported(t),now:()=>Date.now(),setTimeout:window.setTimeout.bind(window),clearTimeout:window.clearTimeout.bind(window)});
+    voiceSession=session;
+    $('#voiceStatus').textContent='Recording… the microphone is on. Press Stop (limit 1:00).';refreshVoice();
+    session.done.then(attachVoice,e=>fail(e)).finally(()=>{if(voiceSession===session)voiceSession=null;refreshVoice()});
+  }catch(e){fail(e)}
+};
+$('#voicePlay').onclick=()=>{const o=selectedObject();if(!o?.voice)return;try{voiceAudio?.pause();voiceAudio=new Audio(SnapShackleVoice.toDataUrl(o.voice));voiceAudio.play().catch(fail)}catch(e){fail(e)}};
+$('#voiceSave').onclick=async()=>{try{const o=selectedObject();if(!o?.voice)return;download(await (await fetch(SnapShackleVoice.toDataUrl(o.voice))).blob(),downloadName('voice-note.'+SnapShackleVoice.extensionFor(o.voice)))}catch(e){fail(e)}};
+$('#voiceDelete').onclick=()=>{const o=selectedObject();if(!o?.voice)return;const before=editor.state();delete o.voice;editor.saveHistory(before);editor.render();notify('Voice note deleted')};
+window.addEventListener('pagehide',()=>{try{voiceSession?.cancel()}catch{}});
 // Optional AI help through the Fleet router. The host makes the call, so the router key never reaches this page.
 let aiSuggestions=[];
 async function refreshAiStatus(){

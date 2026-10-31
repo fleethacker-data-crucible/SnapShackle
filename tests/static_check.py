@@ -97,6 +97,12 @@ assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
 assert 'id="layerAnnounce"' in ui and 'aria-live="polite"' in ui.split('id="layerAnnounce"')[1].split('>')[0] and 'role="group" aria-label="Layers"' in ui
 assert "setAttribute('aria-pressed'" in studio and 'focusedLayer' in studio, 'layer buttons must expose their selected state and keep focus'
 print('PASS: layer buttons expose their selected state, announce it and keep focus')
+voice=(ROOT/'assets/voice.js').read_text(encoding='utf-8')
+assert 'src="/assets/voice.js"' in ui and ui.index('/assets/voice.js') < ui.index('/assets/studio.js'), 'voice.js must load before studio.js'
+assert all(x not in voice for x in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'http://', 'https://', 'sendBeacon')), 'voice notes must stay local'
+assert 'id="voiceRecord"' in ui and 'SnapShackleVoice.start(' in studio and studio.count('SnapShackleVoice.start(') == 1, 'the microphone opens only from the Record button'
+assert 'SnapShackleVoice.sanitizeObject' in (ROOT/'assets/editor.js').read_text(encoding='utf-8'), 'loaded projects must have their voice notes checked'
+print('PASS: voice notes stay local, open the microphone only on Record, and are checked when a project loads')
 router=(ROOT/'modules/Router.ps1').read_text(encoding='utf-8')
 assert "aiSuggest = 'off'" in library and "'/api/ai/alt-text'" in host and 'modules/Router.ps1' in host, 'AI help must default to off and be served by the host'
 assert 'id="aiSuggest"' in ui and 'for="aiSuggest"' in ui and 'aria-describedby="aiSuggestHelp"' in ui and 'src="/assets/aisuggest.js"' in ui
@@ -118,7 +124,7 @@ print('PASS: optional record sound is wired, off by default, and kept out of GIF
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must
 # focus only the window for this start (port + start id), never a stale "SnapShackle Studio" tab.
-assert "(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest)" in host, 'audio.js must be served with the other studio scripts'
+assert "(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest|voice)" in host, 'audio.js must be served with the other studio scripts'
 assert "__STUDIO_TITLE__" in host and "__STUDIO_TITLE__" in ui and "__STUDIO_TITLE__" in studio
 assert "studioStartId" in host and "StudioTitle" in host and "$script:studioTitle" in host
 assert "SnapShackle Studio " in host
