@@ -83,7 +83,8 @@ class SnapShackleEditor {
     const b=this.bounds(orig),left=handle.includes('w')?p.x:b.x,top=handle.includes('n')?p.y:b.y,
       right=handle.includes('e')?p.x:b.x+b.w,bottom=handle.includes('s')?p.y:b.y+b.h;
     const rect={x:Math.min(left,right),y:Math.min(top,bottom),w:Math.max(2,Math.abs(right-left)),h:Math.max(2,Math.abs(bottom-top))};
-    if(orig.points){o.points=orig.points.map(q=>({x:rect.x+(q.x-b.x)*rect.w/b.w,y:rect.y+(q.y-b.y)*rect.h/b.h}));o.x=rect.x;o.y=rect.y}
+    // Every drawn shape carries a one-point `points` list; only freehand strokes are scaled through it.
+    if(orig.points&&(orig.type==='pen'||orig.type==='highlight')){o.points=orig.points.map(q=>({x:rect.x+(q.x-b.x)*rect.w/b.w,y:rect.y+(q.y-b.y)*rect.h/b.h}));o.x=rect.x;o.y=rect.y}
     else if(orig.type==='step'){o.x=rect.x+rect.w/2;o.y=rect.y+rect.h/2}
     else if(orig.type==='text'){o.x=rect.x;o.y=rect.y+rect.h;o.font=clamp(Math.round(rect.h/1.22),10,200)}
     else {o.x=rect.x;o.y=rect.y;o.x2=rect.x+rect.w;o.y2=rect.y+rect.h}
