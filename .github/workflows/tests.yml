@@ -56,6 +56,20 @@ jobs:
           $ErrorActionPreference = 'Continue'
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\cli_test.ps1
           if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
+      - name: Redaction patterns (no OCR)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -ExecutionPolicy Bypass -File tests\redact_ps_test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
+      - name: Evidence capture (synthetic windows, real OCR)
+        # Draws its own windows (needs an interactive desktop); skips itself where OCR or a desktop is missing.
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\evidence_capture_test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
       - name: Share routes (real host, temporary data folder)
         shell: powershell
         run: |
