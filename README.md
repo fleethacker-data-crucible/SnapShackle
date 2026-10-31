@@ -191,6 +191,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
 - `python tests/mp4_record_test.py` records a synthetic canvas in installed Edge (then Chrome) and checks the bytes are a real MP4 (`ftyp` box) and a real WebM. It skips with a message if no installed browser can write MP4; Playwright's bundled Chromium cannot.
 - `powershell -NoProfile -STA -File tests/data_dir_test.ps1` starts real hosts with `-DataDir` and `--data-dir=` and proves captures, sidecars, settings and logs land in that folder while an empty stand-in for `%LOCALAPPDATA%` stays empty.
+- `python tests/layers_a11y_test.py` checks that layer buttons expose `aria-pressed`, that the selected layer is announced by name in a live region, and that keyboard focus stays on the chosen layer when the list is rebuilt.
 - `python tests/layers_numeric_test.py` checks the Position and size fields of the selected layer: exact X, Y, width and height (read back from the saved project), one Undo step per edit, refusal of an empty field, clamping to the image, fixed-size layers, and that dragging a rectangle's corner handle resizes it.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 

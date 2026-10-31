@@ -98,6 +98,9 @@ start=(ROOT/'Start-SnapShackle.ps1').read_text(encoding='utf-8'); demo=(ROOT/'do
 assert '[string]$DataDir' in start and 'Set-SnapShackleDataRoot' in start and 'customDataDir' in start, 'Start-SnapShackle must support a data folder'
 assert '--data-dir' in demo and 'evidence-capture.ps1' in demo and 'End session' in demo, 'the demo walkthrough must use a data folder and the synthetic windows'
 print('PASS: a run can use its own data folder, and the demo walkthrough uses it')
+assert 'id="layerAnnounce"' in ui and 'aria-live="polite"' in ui.split('id="layerAnnounce"')[1].split('>')[0] and 'role="group" aria-label="Layers"' in ui
+assert "setAttribute('aria-pressed'" in studio and 'focusedLayer' in studio, 'layer buttons must expose their selected state and keep focus'
+print('PASS: layer buttons expose their selected state, announce it and keep focus')
 voice=(ROOT/'assets/voice.js').read_text(encoding='utf-8')
 assert 'src="/assets/voice.js"' in ui and ui.index('/assets/voice.js') < ui.index('/assets/studio.js'), 'voice.js must load before studio.js'
 assert all(x not in voice for x in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'http://', 'https://', 'sendBeacon')), 'voice notes must stay local'
