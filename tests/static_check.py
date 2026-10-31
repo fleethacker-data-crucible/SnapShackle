@@ -77,6 +77,10 @@ library=(ROOT/'modules/Library.ps1').read_text(encoding='utf-8')
 assert "recordAudio = 'off'" in library and 'recordMicId' in library
 assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
 assert 'normalizeMode' in audio and 'prepareRecording' in audio
+assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
+assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
+assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+print('PASS: video format (WebM or MP4) is a saved setting, chosen through pickRecorderType')
 print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must
