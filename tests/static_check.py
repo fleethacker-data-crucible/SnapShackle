@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -77,6 +77,12 @@ library=(ROOT/'modules/Library.ps1').read_text(encoding='utf-8')
 assert "recordAudio = 'off'" in library and 'recordMicId' in library
 assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
 assert 'normalizeMode' in audio and 'prepareRecording' in audio
+share=(ROOT/'modules/Share.ps1').read_text(encoding='utf-8')
+assert "/api/share" in host and 'Invoke-SnapShackleShare' in host and 'Get-SafeCapturePath ([string]$share.capture)' in host, 'share route must validate the capture name'
+assert 'id="shareDestination"' in ui and 'for="shareDestination"' in ui and 'id="shareFolders"' in ui and 'for="shareFolders"' in ui
+assert 'Invoke-WebRequest' not in share and 'WebClient' not in share and 'Invoke-RestMethod' not in share and 'http://' not in share and 'https://' not in share, 'sharing must stay local'
+assert '$false)' in share and 'File]::Copy' in share, 'folder copies must never overwrite'
+print('PASS: share destinations stay local, validate the capture name and never overwrite')
 assert 'src="/assets/webcam.js"' in ui and ui.index('/assets/webcam.js') < ui.index('/assets/studio.js'), 'webcam.js must load before studio.js'
 assert 'id="recordCamera"' in ui and 'value="off" selected' in ui.split('id="recordCamera"')[1].split('</select>')[0] and 'id="recordCameraRefresh"' in ui
 assert 'for="recordCamera"' in ui and 'aria-describedby="recordCameraHelp"' in ui

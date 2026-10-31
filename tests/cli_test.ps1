@@ -157,6 +157,25 @@ try {
             Assert-True ($r.Exit -eq 1 -and $r.Json.error -match 'OCR') ('expected a clear OCR error: ' + $r.Text)
         }
     }
+    Test-Case 'share list and share send copy a capture into a share folder without overwriting' {
+        $shareDir = Join-Path $work 'shared'; [void][IO.Directory]::CreateDirectory($shareDir)
+        $prefs = Join-Path $work 'share-prefs.json'
+        [IO.File]::WriteAllText($prefs, (ConvertTo-Json -InputObject @{ shareFolders = @(@{ name = 'Team'; path = $shareDir }) } -Depth 4 -Compress), [Text.UTF8Encoding]::new($false))
+        $s = Invoke-Cli @('settings', 'set', '--file', $prefs, '--json')
+        Assert-True ($s.Exit -eq 0) $s.Text
+        $img = Invoke-Cli @('library', 'save', '--file', $png, '--json')
+        $cap = $img.Json.result.name
+        $list = Invoke-Cli @('share', 'list', '--json')
+        Assert-True ($list.Exit -eq 0 -and @($list.Json.result.destinations | Where-Object { $_.kind -eq 'folder' -and $_.name -eq 'Team' }).Count -eq 1) ('share list: ' + $list.Text)
+        $a = Invoke-Cli @('share', 'send', '--capture', $cap, '--kind', 'folder', '--destination', 'Team', '--json')
+        Assert-True ($a.Exit -eq 0 -and [IO.File]::Exists((Join-Path $shareDir $cap))) ('share send: ' + $a.Text)
+        $b = Invoke-Cli @('share', 'send', '--capture', $cap, '--kind', 'folder', '--destination', 'Team', '--json')
+        Assert-True ($b.Exit -eq 0 -and @(Get-ChildItem -LiteralPath $shareDir -Filter '*.png').Count -eq 2) 'a second share overwrote the first'
+        $bad = Invoke-Cli @('share', 'send', '--capture', $cap, '--kind', 'teleport', '--json')
+        Assert-True ($bad.Exit -eq 2 -and $bad.Json.errorType -eq 'usage') ('a bad kind should be a usage error: ' + $bad.Text)
+        $none = Invoke-Cli @('share', 'send', '--capture', $cap, '--kind', 'folder', '--destination', 'Nowhere', '--json')
+        Assert-True ($none.Exit -eq 1 -and $none.Json.ok -eq $false) ('an unknown folder should fail: ' + $none.Text)
+    }
     Test-Case 'settings set and show round-trip, typed, and unknown keys are ignored' {
         $r = Invoke-Cli @('settings', 'set', '--key', 'namePrefix', '--value', 'DemoRun', '--json')
         Assert-True ($r.Exit -eq 0 -and $r.Json.result.namePrefix -eq 'DemoRun') $r.Text

@@ -41,6 +41,11 @@ $script:SnapShackleCommands = @(
         (New-SnapShackleOption 'note' 'string' $false 'body' 'Note text (replaces the old one).')) 'json' 'json' $false @('metadataSave'))
     (New-SnapShackleCommand 'library delete' 'Delete a saved capture permanently. Needs --yes; every delete is written to the audit log.' 'DELETE' '/api/library/{name}' @(
         (New-SnapShackleOption 'name' 'string' $true 'path' 'Capture name.')) 'none' 'json' $true @('libraryDelete'))
+    (New-SnapShackleCommand 'share list' 'The places a saved capture can be shared to: the folders set under Share folders, the clipboard, Explorer and the default app.' 'GET' '/api/share')
+    (New-SnapShackleCommand 'share send' 'Share a saved capture: copy it into a share folder (never overwrites), put the file on the clipboard, show it in Explorer, or open it in the default app. Local only; nothing is uploaded.' 'POST' '/api/share' @(
+        (New-SnapShackleOption 'capture' 'string' $true 'body' 'Capture name from library list.'),
+        (New-SnapShackleOption 'kind' 'string' $true 'body' 'Where to: folder, clipboard, reveal (Explorer) or open (default app).' @('folder', 'clipboard', 'reveal', 'open')),
+        (New-SnapShackleOption 'destination' 'string' $false 'body' 'Share folder name from share list (needed for folder).')) 'json' 'json' $false @('shareSelected', 'shareCurrent'))
     (New-SnapShackleCommand 'settings show' 'The saved preferences.' 'GET' '/api/settings')
     (New-SnapShackleCommand 'settings set' 'Change preferences: one --key with --value, or a JSON file of keys. Unknown keys are ignored by the host.' 'PUT' '/api/settings' @(
         (New-SnapShackleOption 'key' 'string' $false 'local' 'Preference name, for example namePrefix, autoLibrary, recordFps, theme.'),
