@@ -40,6 +40,7 @@ foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option 
 . (Join-Path $root 'modules/Ocr.ps1')
 . (Join-Path $root 'modules/Migration.ps1')
 . (Join-Path $root 'modules/Library.ps1')
+. (Join-Path $root 'modules/Cli.ps1')
 . (Join-Path $root 'modules/Tray.ps1')
 $SnapShackleVersion = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
 $library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle\Captures' } else { Join-Path $root 'captures' }
@@ -235,11 +236,13 @@ function Invoke-SnapShackleRequest($Context) {
     if ($path -eq '/api/session/stop' -and $method -eq 'POST') {
         # End session in the studio. The intent header keeps a stray authenticated request from stopping SnapShackle.
         if ($request.Headers['X-SnapShackle-Intent'] -ne 'end-session') { Send-Json $Context @{error='Missing intent'} 400;return }
+        Write-SnapShackleAudit $runtimeDir 'session-stop' '' ($(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'studio' }))
         if ($shared.Busy) { Send-Json $Context @{error='A capture is still being saved; try again in a moment'} 409;return }
         Send-Json $Context @{stopped=$true}
         $script:stopReason='End session in the studio.'
         $shared.Quit=$true;return
     }
+    if ($path -eq '/api/commands' -and $method -eq 'GET') { Send-Json $Context (Get-SnapShackleCommandsDocument);return }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
         Send-Json $Context @{capture=$true;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
     }
@@ -331,6 +334,9 @@ function Invoke-SnapShackleRequest($Context) {
         }
         if (-not (Test-Path -LiteralPath $capturePath)) { Send-Json $Context @{error='Capture not found'} 404;return }
         if ($method -eq 'DELETE') {
+            # A delete is acknowledged explicitly (the studio sends this after its own confirm box; the CLI after --yes).
+            if ($request.Headers['X-SnapShackle-Confirm'] -ne 'yes') { Send-Json $Context @{error='Confirmation required: send X-SnapShackle-Confirm: yes (CLI: --yes)';confirm=$true} 409;return }
+            Write-SnapShackleAudit $runtimeDir 'library-delete' $name ($(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'studio' }))
             Remove-Item -LiteralPath $capturePath
             # Invalidate cached preview when its original is deleted.
             if ($script:thumbnailCache.ContainsKey($name)) { [void]$script:thumbnailCache.Remove($name) }
@@ -378,6 +384,10 @@ if ($Stay -and $NoTray) {
 $shared.Stay=[bool]$Stay
 Write-Host "SnapShackle $SnapShackleVersion local server: $base" -ForegroundColor Red
 $runtimeFile=$null
+# The CLI (snapshackle.ps1) finds the port and the session token here; only the signed-in user can read the file.
+$sessionFile=$null
+try { $sessionFile=Write-SnapShackleSessionFile (Split-Path -Parent $library) $PID $Port $sessionToken }
+catch { Write-Warning ('Could not write the CLI session file: ' + $_.Exception.Message) }
 try { $runtimeFile=Write-SnapShackleRuntimeFile $runtimeDir $PID $Port $base ([bool]$Stay) }
 catch { Write-Warning ('Could not write the runtime file in ' + $runtimeDir + ': ' + $_.Exception.Message) }
 # Stop-SnapShackle.ps1 and the launcher signal this event, so SnapShackle can remove its tray icon and hotkeys itself.
@@ -497,6 +507,7 @@ try {
     $trayClean=Stop-SnapShackleTray $tray $shared
     try { $server.Dispose() } catch {}
     Remove-SnapShackleRuntimeFile $runtimeFile
+    Remove-SnapShackleSessionFile $sessionFile $PID
     if ($null -ne $stopEvent) { $stopEvent.Dispose() }
     if ($script:stopReason) { Write-Host $script:stopReason -ForegroundColor DarkGray }
     Write-Host 'SnapShackle stopped.'
