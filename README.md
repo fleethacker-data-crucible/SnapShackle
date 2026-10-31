@@ -128,6 +128,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 
 | Area | What works | Caveats |
 |---|---|---|
+| Voice notes on annotations | Select an annotation, **Record** (Workflows), **Stop**: a clip up to 1:00 (Opus/WebM, about 24 kbps) is kept on that annotation, marked in the Layers list, played back, saved as an audio file or deleted. Undo and Redo carry it; an editable project saved from the studio includes it. The microphone is opened only while recording and released on stop; nothing is uploaded | Local only and short by design. A loaded project's notes are checked (type, length, size) and dropped if they do not fit. No transcript. The exported PNG carries no audio. Needs the browser's microphone permission |
 | Desktop screenshot | Entire desktop, selected monitor, selected visible window, native drag-to-select region | Standard `CopyFromScreen`; not minimized/occluded windows or DRM-protected content |
 | Browser screenshot | Browser screen/window/tab capture after user permission | Browser support and permission required |
 | Editor | Arrows, boxes, ellipses, lines, pen, highlighter, text, numbered steps, opaque redaction, pixelate, blur; layer reordering; drag and corner resizing; object duplication/deletion | Some object transforms remain simplified; complex multi-object grouping not available |
@@ -173,6 +174,8 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
 - `powershell -NoProfile -STA -File tests/share_api_test.ps1` starts a real host (no tray, no browser, temporary data folder, free port) and checks the share routes over HTTP with a synthetic PNG: token required, folder copy without overwrite, bad requests refused.
 - `python tests/share_ui_test.py` checks the share controls against a mocked API.
+- `node tests/voice_test.js` checks voice-note recording with a fake microphone: the 1:00 limit, release of the microphone on stop, cancel, refusal messages and the clean-up of untrusted notes.
+- `python tests/voice_browser_test.py` runs Chromium's fake microphone: record on a selected annotation, the layer marker, Undo/Redo, a saved audio file, a project round trip that drops a tampered note, and a refused microphone.
 - `node tests/webcam_test.js` checks the camera options, picture-in-picture layout in every corner and size, and that a refused camera never throws.
 - `python tests/webcam_browser_test.py` runs Chromium's fake camera: the picture lands in the chosen corner, the composite records, the camera is released on stop, a live camera is announced, and a refused camera still records.
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
@@ -194,6 +197,7 @@ modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
+assets/voice.js             Voice notes on annotations (local recording, limits, clean-up)
 modules/Redact.ps1         Sensitive-text detection and redaction boxes for scripts (mirrors assets/redact.js)
 tools/                     evidence-capture.ps1 and its sample manifest (not needed at runtime)
 modules/Share.ps1          Share destinations: folder copy, clipboard file, Explorer, default app

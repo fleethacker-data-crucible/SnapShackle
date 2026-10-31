@@ -43,7 +43,7 @@ class SnapShackleEditor {
     let image=null;
     if(state.background){if(typeof state.background!=='string'||!(state.background.startsWith('data:image/')&&state.background.length<=60_000_000)&&!this._blobUrls.has(state.background))throw Error('Invalid background image');image=await this._image(state.background)}
     this.background=state.background||null; this._img=image; this.canvas.width=state.width;this.canvas.height=state.height;
-    this.objects=clone(state.objects);this.counter=state.counter||1;this.selected=-1;this.drag=null;this.render();
+    this.objects=clone(state.objects).map(o=>window.SnapShackleVoice?SnapShackleVoice.sanitizeObject(o):o);this.counter=state.counter||1;this.selected=-1;this.drag=null;this.render();
   }
   async load(state){const prev=this.state();await this.restore(state);this.saveHistory(prev)}
   async undo(){if(!this.undoStack.length)return;let old=this.undoStack.pop(),current=this.state();await this.restore(old);this.redoStack.push(current)}
