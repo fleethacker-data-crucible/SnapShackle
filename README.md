@@ -128,6 +128,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 
 | Area | What works | Caveats |
 |---|---|---|
+| Hand-off to other Fleet apps | `tools\handoff.ps1` lists captures (filter by text, tag, date, name) or copies them with their sidecars to a folder with a `handoff.json` manifest (hashes, tags, note, optional OCR text) for Bowerbird, Capstan and Scrimshaw. See [docs/HANDOFF.md](docs/HANDOFF.md) | Reads the folder directly; never overwrites in the output folder; lists at most 250 captures. The receiving apps' side is theirs |
 | Desktop screenshot | Entire desktop, selected monitor, selected visible window, native drag-to-select region | Standard `CopyFromScreen`; not minimized/occluded windows or DRM-protected content |
 | Browser screenshot | Browser screen/window/tab capture after user permission | Browser support and permission required |
 | Editor | Arrows, boxes, ellipses, lines, pen, highlighter, text, numbered steps, opaque redaction, pixelate, blur; layer reordering; drag and corner resizing; object duplication/deletion | Some object transforms remain simplified; complex multi-object grouping not available |
@@ -173,6 +174,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
 - `powershell -NoProfile -STA -File tests/share_api_test.ps1` starts a real host (no tray, no browser, temporary data folder, free port) and checks the share routes over HTTP with a synthetic PNG: token required, folder copy without overwrite, bad requests refused.
 - `python tests/share_ui_test.py` checks the share controls against a mocked API.
+- `powershell -NoProfile -File tests/handoff_test.ps1` checks the hand-off helper on a synthetic capture folder: list and filters, export with matching hashes, no overwrite, dry run, and the exit codes.
 - `node tests/webcam_test.js` checks the camera options, picture-in-picture layout in every corner and size, and that a refused camera never throws.
 - `python tests/webcam_browser_test.py` runs Chromium's fake camera: the picture lands in the chosen corner, the composite records, the camera is released on stop, a live camera is announced, and a refused camera still records.
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
