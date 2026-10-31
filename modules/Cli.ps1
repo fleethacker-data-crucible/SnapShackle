@@ -70,6 +70,7 @@ $script:SnapShackleGuiOnly = [ordered]@{
     tabLibrary = 'View only (panel tab)'; tabLayers = 'View only (panel tab)'; tabWorkflows = 'View only (panel tab)'
     themeToggle = 'View only (also saved by settings set)'; helpButton = 'View only'; closeHelp = 'View only'
     recordMicRefresh = 'Browser microphone permission prompt'
+    voiceRecord = 'Browser microphone permission prompt and the annotation editor'; voicePlay = 'Plays the clip in the browser'; voiceSave = 'Browser download of the clip on the selected annotation'; voiceDelete = 'Annotation editor'
     recordCameraRefresh = 'Browser camera permission prompt'
 }
 
