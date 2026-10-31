@@ -136,6 +136,33 @@ with sync_playwright() as p:
     page.locator('#layers button').first.click()
     page.locator('#duplicate').click()
     assert page.locator('#layers button').count()==2, 'Duplicate failed'
+    # A dialog owns keyboard input, even when focus is on a button instead of a text field.
+    page.locator('#helpButton').click()
+    page.locator('#closeHelp').focus()
+    for key in ['Delete', 'Control+z', 'Control+y']:
+        page.keyboard.press(key)
+        page.wait_for_timeout(30)
+        assert page.locator('#layers button').count()==2, key+' edited the canvas behind the dialog'
+    page.keyboard.press('Escape')
+    # Selects, rich-text fields and menus also own their editing shortcuts.
+    page.evaluate('''() => {
+      const box = document.createElement('div'); box.id = 'shortcut-fixture';
+      box.innerHTML = '<select id="shortcut-select"><option>One</option></select><div contenteditable="true" id="shortcut-editable">Synthetic text</div><div role="menu"><button id="shortcut-menu">Menu item</button></div>';
+      document.body.append(box);
+    }''')
+    for selector in ['#shortcut-select', '#shortcut-editable', '#shortcut-menu']:
+        page.locator(selector).focus()
+        for key in ['Delete', 'Control+z', 'Control+y']:
+            page.keyboard.press(key)
+            page.wait_for_timeout(30)
+            assert page.locator('#layers button').count()==2, (selector,key,'edited the canvas')
+    page.locator('#shortcut-fixture').evaluate('el => el.remove()')
+    # Undo and redo still work when the editor owns focus.
+    page.locator('#canvas').click(position={'x': 5, 'y': 5})
+    page.keyboard.press('Control+z')
+    page.wait_for_function('document.querySelectorAll("#layers button").length===1')
+    page.keyboard.press('Control+y')
+    page.wait_for_function('document.querySelectorAll("#layers button").length===2')
     assert page.locator('#projectSave').is_visible()
     with page.expect_download(timeout=8000) as project_download:
         page.locator('#projectSave').click()
