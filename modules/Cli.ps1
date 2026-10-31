@@ -46,6 +46,11 @@ $script:SnapShackleCommands = @(
         (New-SnapShackleOption 'capture' 'string' $true 'body' 'Capture name from library list.'),
         (New-SnapShackleOption 'kind' 'string' $true 'body' 'Where to: folder, clipboard, reveal (Explorer) or open (default app).' @('folder', 'clipboard', 'reveal', 'open')),
         (New-SnapShackleOption 'destination' 'string' $false 'body' 'Share folder name from share list (needed for folder).')) 'json' 'json' $false @('shareSelected', 'shareCurrent'))
+    (New-SnapShackleCommand 'ai status' 'Whether AI help is on, the router address, where the key comes from (never the key) and the privacy choice.' 'GET' '/api/ai/status')
+    (New-SnapShackleCommand 'ai describe' 'Alt text for a PNG through the Fleet router. Needs AI help switched on in the settings (aiSuggest).' 'POST' '/api/ai/alt-text' @(
+        (New-SnapShackleOption 'file' 'file' $true 'local' 'PNG file to describe.')) 'png' 'json' $false @('aiAltText'))
+    (New-SnapShackleCommand 'ai suggest' 'Annotation suggestions for a PNG through the Fleet router (fractions of the image). Needs aiSuggest on.' 'POST' '/api/ai/suggest' @(
+        (New-SnapShackleOption 'file' 'file' $true 'local' 'PNG file to look at.')) 'png' 'json' $false @('aiSuggestBtn'))
     (New-SnapShackleCommand 'settings show' 'The saved preferences.' 'GET' '/api/settings')
     (New-SnapShackleCommand 'settings set' 'Change preferences: one --key with --value, or a JSON file of keys. Unknown keys are ignored by the host.' 'PUT' '/api/settings' @(
         (New-SnapShackleOption 'key' 'string' $false 'local' 'Preference name, for example namePrefix, autoLibrary, recordFps, theme.'),
@@ -71,6 +76,7 @@ $script:SnapShackleGuiOnly = [ordered]@{
     themeToggle = 'View only (also saved by settings set)'; helpButton = 'View only'; closeHelp = 'View only'
     recordMicRefresh = 'Browser microphone permission prompt'
     voiceRecord = 'Browser microphone permission prompt and the annotation editor'; voicePlay = 'Plays the clip in the browser'; voiceSave = 'Browser download of the clip on the selected annotation'; voiceDelete = 'Annotation editor'
+    aiAltCopy = 'Clipboard of the browser page'; aiAltNote = 'Fills the note field of the open image (library tag sets a note)'; aiApply = 'Annotation editor: adds the ticked suggestions to the open image'
     recordCameraRefresh = 'Browser camera permission prompt'
 }
 

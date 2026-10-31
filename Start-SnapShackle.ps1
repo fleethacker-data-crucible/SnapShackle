@@ -38,6 +38,7 @@ foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option 
 . (Join-Path $root 'modules/LocalHttp.ps1')
 . (Join-Path $root 'modules/Native.ps1')
 . (Join-Path $root 'modules/Ocr.ps1')
+. (Join-Path $root 'modules/Router.ps1')
 . (Join-Path $root 'modules/Migration.ps1')
 . (Join-Path $root 'modules/Library.ps1')
 . (Join-Path $root 'modules/Cli.ps1')
@@ -204,7 +205,7 @@ function Invoke-SnapShackleRequest($Context) {
         $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SNAPSHACKLE_VERSION__',$SnapShackleVersion).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
     }
-    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|voice)\.js$') {
+    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest|voice)\.js$') {
         $filename=$Matches[1]+'.js'
         $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($source)) 'application/javascript; charset=utf-8';return
@@ -305,6 +306,24 @@ function Invoke-SnapShackleRequest($Context) {
         Assert-Png $bytes
         $result=Invoke-SnapShackleOcr $bytes
         Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
+    }
+    if ($path -eq '/api/ai/status' -and $method -eq 'GET') {
+        Send-Json $Context (Get-SnapShackleAiStatus (Get-SnapShackleSettings $settingsPath));return
+    }
+    if (($path -eq '/api/ai/alt-text' -or $path -eq '/api/ai/suggest') -and $method -eq 'POST') {
+        $aiSettings=Get-SnapShackleSettings $settingsPath
+        if (([string]$aiSettings.aiSuggest) -ne 'on') { Send-Json $Context @{error='AI suggestions are off. Turn them on under Workflows, Settings.'} 409;return }
+        $bytes=Read-Body $Context 15000000
+        Assert-Png $bytes
+        try {
+            if ($path -eq '/api/ai/alt-text') { Send-Json $Context (Invoke-SnapShackleAltText $bytes $aiSettings) }
+            else {
+                $ocrText=''
+                if (Test-SnapShackleOcr) { try { $ocrText=[string](Invoke-SnapShackleOcr $bytes).text } catch {} }
+                Send-Json $Context (Invoke-SnapShackleSuggest $bytes $ocrText $aiSettings)
+            }
+        } catch { Send-Json $Context @{error=$_.Exception.Message} 502 }
+        return
     }
     if ($path -eq '/api/share' -and $method -eq 'GET') {
         [object[]]$destinations = Get-SnapShackleShareDestinations (Get-SnapShackleSettings $settingsPath)
