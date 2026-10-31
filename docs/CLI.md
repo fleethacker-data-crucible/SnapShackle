@@ -43,6 +43,7 @@ SnapShackle-CLI.bat <noun> <verb> [--option value ...] [--json] [--out <file>] [
 - `--json` prints one document: `{"schema":"snapshackle.result/1","command":...,"ok":...,"result":...}`, or `error` and `errorType` (`usage`, `failed` or `notrunning`).
 - `--out FILE` on a JSON command writes that document to FILE as UTF-8 without a BOM. On a PNG command it is the PNG to write, and the result gives its size and SHA-256.
 - `--yes` is required by `library delete` and `session stop`. `--dry-run` shows the route and body without sending anything (the token is never shown).
+- `--data-dir <folder>` (or `SNAPSHACKLE_DATA_DIR`) points the CLI at a SnapShackle that keeps its data in its own folder (`Start-SnapShackle.ps1 -DataDir`, see `docs/DEMO-WALKTHROUGH.md`); `app start` then starts one there.
 - Exit codes: `0` success, `1` the command failed, `2` usage error, `3` SnapShackle is not running. Nothing waits on a dialog.
 
 ## How the API is locked to you

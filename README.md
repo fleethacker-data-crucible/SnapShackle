@@ -59,7 +59,10 @@ Launch-SnapShackle.bat -Port 9000
 Launch-SnapShackle.bat -Diagnostics
 Launch-SnapShackle.bat --stay
 Launch-SnapShackle.bat --replace
+Launch-SnapShackle.bat --data-dir C:\Demo\SnapShackle-run1
 ```
+
+`--data-dir <full path>` (or `-DataDir`, or the `SNAPSHACKLE_DATA_DIR` environment variable) keeps captures, settings and logs under `<path>\SnapShackle` instead of `%LOCALAPPDATA%\SnapShackle`, and skips the migration of older data. Use it for a demo or a trial run; the console prints the folder in yellow and `/api/health` reports `customDataDir`. See [docs/DEMO-WALKTHROUGH.md](docs/DEMO-WALKTHROUGH.md). `Stop-SnapShackle.ps1 -DataDir <path>` looks for that run's runtime files, but still stops every SnapShackle process it finds; end a demo with *End session* instead.
 
 `-NoBrowser` keeps the host running and prints its URL (it then stops once a studio tab that connected has closed; add `--stay` to keep it). `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts SnapShackle separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
 
@@ -187,6 +190,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/webcam_browser_test.py` runs Chromium's fake camera: the picture lands in the chosen corner, the composite records, the camera is released on stop, a live camera is announced, and a refused camera still records.
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
 - `python tests/mp4_record_test.py` records a synthetic canvas in installed Edge (then Chrome) and checks the bytes are a real MP4 (`ftyp` box) and a real WebM. It skips with a message if no installed browser can write MP4; Playwright's bundled Chromium cannot.
+- `powershell -NoProfile -STA -File tests/data_dir_test.ps1` starts real hosts with `-DataDir` and `--data-dir=` and proves captures, sidecars, settings and logs land in that folder while an empty stand-in for `%LOCALAPPDATA%` stays empty.
 - `python tests/layers_a11y_test.py` checks that layer buttons expose `aria-pressed`, that the selected layer is announced by name in a live region, and that keyboard focus stays on the chosen layer when the list is rebuilt.
 - `python tests/layers_numeric_test.py` checks the Position and size fields of the selected layer: exact X, Y, width and height (read back from the saved project), one Undo step per edit, refusal of an empty field, clamping to the image, fixed-size layers, and that dragging a rectangle's corner handle resizes it.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.

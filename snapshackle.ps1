@@ -15,6 +15,7 @@ $Rest = @($args | ForEach-Object { [string]$_ })
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Cli.ps1')
+. (Join-Path $root 'modules/Lifecycle.ps1')
 $ResultSchema = 'snapshackle.result/1'
 $FlagNames = @('json', 'yes', 'dry-run', 'help')
 
@@ -24,11 +25,14 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) { [IO.File]::WriteAllText
 # --- arguments ------------------------------------------------------------------------------------------------------
 $positional = [Collections.Generic.List[string]]::new()
 $opts = @{}
+$dataDirArg = $null
 $flags = @{}
 for ($i = 0; $i -lt @($Rest).Count; $i++) {
     $a = [string]$Rest[$i]
     if ($a -like '--*' -and $a.Length -gt 2) {
         $n = $a.Substring(2).ToLowerInvariant()
+        # --data-dir <folder>: talk to the SnapShackle (or start the one) that keeps its data there (see Start-SnapShackle.ps1 -DataDir).
+        if ($n -eq 'data-dir') { if ($i + 1 -lt @($Rest).Count) { $dataDirArg = [string]$Rest[++$i] }; continue }
         if ($FlagNames -contains $n) { $flags[$n] = $true; continue }
         if ($i + 1 -ge @($Rest).Count) { $opts[$n] = $null; continue }
         $opts[$n] = [string]$Rest[++$i]
@@ -47,6 +51,8 @@ function Write-Result([string]$Command, [bool]$Ok, $Result, [string]$ErrorText, 
     Exit-SnapShackle $Code
 }
 function Stop-Usage([string]$Command, [string]$Message) { Write-Result $Command $false $null ($Message + ' (try: snapshackle commands)') 'usage' 2 }
+# A data folder of its own (--data-dir, or SNAPSHACKLE_DATA_DIR): every path below, and a SnapShackle started by app start, follows it.
+try { [void](Set-SnapShackleDataRoot $dataDirArg) } catch { Stop-Usage 'snapshackle' $_.Exception.Message }
 
 # --- listing --------------------------------------------------------------------------------------------------------
 $commands = @($script:SnapShackleCommands)

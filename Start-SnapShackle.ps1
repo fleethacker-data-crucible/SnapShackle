@@ -20,6 +20,8 @@ param(
     [switch]$Replace,
     # Tests only: skip the single-instance check (a headless -NoTray test host next to a running SnapShackle).
     [switch]$AllowSecondInstance,
+    # Keep captures, settings and logs under <DataDir>\SnapShackle, not %LOCALAPPDATA% (a demo or trial run). Also --data-dir.
+    [string]$DataDir,
     # Launcher-style options: --stay, --replace, --no-browser, --no-tray.
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest
 )
@@ -34,6 +36,9 @@ if ($launch.Stay) { $Stay = $true }
 if ($launch.Replace) { $Replace = $true }
 if ($launch.NoBrowser) { $NoBrowser = $true }
 if ($launch.NoTray) { $NoTray = $true }
+if ($launch.DataDir -and -not $DataDir) { $DataDir = $launch.DataDir }
+$script:SnapShackleDataRoot = Set-SnapShackleDataRoot $DataDir
+if ($script:SnapShackleDataRoot) { Write-Host ('Data folder: ' + $script:SnapShackleDataRoot + '\SnapShackle (not %LOCALAPPDATA%)') -ForegroundColor Yellow }
 foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option ' + $unknown) }
 . (Join-Path $root 'modules/LocalHttp.ps1')
 . (Join-Path $root 'modules/Native.ps1')
@@ -245,7 +250,7 @@ function Invoke-SnapShackleRequest($Context) {
     }
     if ($path -eq '/api/commands' -and $method -eq 'GET') { Send-Json $Context (Get-SnapShackleCommandsDocument);return }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
+        Send-Json $Context @{capture=$true;customDataDir=[bool]$script:SnapShackleDataRoot;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
         Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
