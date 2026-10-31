@@ -57,4 +57,4 @@ A new feature must add its command (or a reason) in the same change.
 ## Tests
 
 - `tests/commands_test.ps1`: offline parity check. Fails if a host route or a studio button has no command or reason, a command names a missing route, the registry is malformed, a destructive route loses its confirmation, or the lockdown rules change.
-- `tests/cli_test.ps1`: end to end on a real headless host in a temporary data folder, with synthetic PNGs and one synthetic window. Covers the session-file ACL, every command group, `--yes` and `--dry-run`, the audit log, usage errors and exit codes, and BOM-free `--out`. It never captures the real desktop.
+- `tests/cli_test.ps1`: end to end on a real headless host in a temporary data folder, with synthetic PNGs and one synthetic window. Covers the session-file ACL, every command group, `--yes` and `--dry-run`, the audit log, usage errors and exit codes, and BOM-free `--out`. It never captures the real desktop. The window-capture case skips itself (and says so) in a session with no interactive desktop, such as a CI runner installed as a service.

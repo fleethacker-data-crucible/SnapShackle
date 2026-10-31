@@ -132,22 +132,25 @@ try {
             Assert-True ($r.Exit -eq 2 -and $r.Json.ok -eq $false -and $r.Json.errorType -eq 'usage') ((($case -join ' ')) + ' -> exit ' + $r.Exit + ' ' + $r.Text)
         }
     }
-    Test-Case 'a synthetic window can be captured by id with PrintWindow' {
-        $form = [Windows.Forms.Form]::new(); $form.Text = 'Fleet Demo - cli test'; $form.StartPosition = 'Manual'; $form.Location = [Drawing.Point]::new(60, 60)
-        $form.ClientSize = [Drawing.Size]::new(420, 240); $form.ShowInTaskbar = $false; $form.BackColor = [Drawing.Color]::FromArgb(255, 18, 160, 90)
-        $form.Show(); $end = [DateTime]::UtcNow.AddMilliseconds(600); while ([DateTime]::UtcNow -lt $end) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
-        $w = Invoke-Cli @('window', 'list', '--json')
-        Assert-True (@($w.Json.result.windows | Where-Object { $_.Title -like 'Fleet Demo - cli test*' }).Count -ge 1) 'the synthetic window is not in window list'
-        $out = Join-Path $work 'window.png'
-        $c = Invoke-Cli @('capture', 'window', '--window', [string][long]$form.Handle, '--out', $out, '--json')
-        Assert-True ($c.Exit -eq 0 -and $c.Json.result.bytes -gt 500) $c.Text
-        $img = [Drawing.Bitmap]::new($out)
-        try {
-            Assert-True ($img.Width -ge 420 -and $img.Height -ge 240) ('size ' + $img.Width + 'x' + $img.Height)
-            $p = $img.GetPixel([int]($img.Width / 2), [int]($img.Height / 2))
-            Assert-True ($p.R -eq 18 -and $p.G -eq 160 -and $p.B -eq 90) ('window pixels not captured: ' + $p.R + ',' + $p.G + ',' + $p.B)
-        } finally { $img.Dispose() }
-        $form.Close(); $form.Dispose(); $form = $null
+    # A runner installed as a service has no interactive desktop, so a window it draws is not enumerable: skip there, run everywhere else.
+    if (-not [Environment]::UserInteractive) { Write-Host 'SKIP  a synthetic window can be captured by id with PrintWindow (no interactive desktop in this session)' } else {
+        Test-Case 'a synthetic window can be captured by id with PrintWindow' {
+            $form = [Windows.Forms.Form]::new(); $form.Text = 'Fleet Demo - cli test'; $form.StartPosition = 'Manual'; $form.Location = [Drawing.Point]::new(60, 60)
+            $form.ClientSize = [Drawing.Size]::new(420, 240); $form.ShowInTaskbar = $false; $form.BackColor = [Drawing.Color]::FromArgb(255, 18, 160, 90)
+            $form.Show(); $end = [DateTime]::UtcNow.AddMilliseconds(600); while ([DateTime]::UtcNow -lt $end) { [Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 20 }
+            $w = Invoke-Cli @('window', 'list', '--json')
+            Assert-True (@($w.Json.result.windows | Where-Object { $_.Title -like 'Fleet Demo - cli test*' }).Count -ge 1) 'the synthetic window is not in window list'
+            $out = Join-Path $work 'window.png'
+            $c = Invoke-Cli @('capture', 'window', '--window', [string][long]$form.Handle, '--out', $out, '--json')
+            Assert-True ($c.Exit -eq 0 -and $c.Json.result.bytes -gt 500) $c.Text
+            $img = [Drawing.Bitmap]::new($out)
+            try {
+                Assert-True ($img.Width -ge 420 -and $img.Height -ge 240) ('size ' + $img.Width + 'x' + $img.Height)
+                $p = $img.GetPixel([int]($img.Width / 2), [int]($img.Height / 2))
+                Assert-True ($p.R -eq 18 -and $p.G -eq 160 -and $p.B -eq 90) ('window pixels not captured: ' + $p.R + ',' + $p.G + ',' + $p.B)
+            } finally { $img.Dispose() }
+            $form.Close(); $form.Dispose(); $form = $null
+        }
     }
     Test-Case 'ocr run reads synthetic text, or fails clearly where OCR is missing' {
         $r = Invoke-Cli @('ocr', 'run', '--file', $png, '--json')
