@@ -210,7 +210,7 @@ function Invoke-SnapShackleRequest($Context) {
         $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SNAPSHACKLE_VERSION__',$SnapShackleVersion).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
     }
-    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest)\.js$') {
+    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest|voice)\.js$') {
         $filename=$Matches[1]+'.js'
         $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($source)) 'application/javascript; charset=utf-8';return

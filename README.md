@@ -131,6 +131,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 
 | Area | What works | Caveats |
 |---|---|---|
+| Voice notes on annotations | Select an annotation, **Record** (Workflows), **Stop**: a clip up to 1:00 (Opus/WebM, about 24 kbps) is kept on that annotation, marked in the Layers list, played back, saved as an audio file or deleted. Undo and Redo carry it; an editable project saved from the studio includes it. The microphone is opened only while recording and released on stop; nothing is uploaded | Local only and short by design. A loaded project's notes are checked (type, length, size) and dropped if they do not fit. No transcript. The exported PNG carries no audio. Needs the browser's microphone permission |
 | AI help (opt-in) | Off until chosen under Workflows, Settings. **Describe image** writes alt text; **Suggest annotations** lists covers, boxes, arrows, steps and captions you tick before anything is added (one undo removes them). The host asks the Fleet router (Fairlead, `127.0.0.1:8776`, override `SNAPSHACKLE_AI_ENDPOINT_URL`) and asks for local models only unless you choose otherwise. The router key is read from the Lazarette item `snapshackle-router-key` (override `SNAPSHACKLE_LAZARETTE_ITEM_Router`) or `SNAPSHACKLE_ROUTER_KEY` and is never saved or shown. See [docs/AI-HELP.md](docs/AI-HELP.md) | Only a loopback router address is accepted. Reading the vault needs Lazarette already unlocked in the process that starts SnapShackle; otherwise a launcher sets the environment variable. Suggestions are a model's guess: check each one. Tested against a fake router, not a live one |
 | Desktop screenshot | Entire desktop, selected monitor, selected visible window, native drag-to-select region | Standard `CopyFromScreen`; not minimized/occluded windows or DRM-protected content |
 | Browser screenshot | Browser screen/window/tab capture after user permission | Browser support and permission required |
@@ -181,6 +182,8 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `powershell -NoProfile -STA -File tests/capture_format_test.ps1` starts a real host, saves a synthetic PNG with text, tags it, and checks the files on disk and the sidecar against the fields in `docs/CAPTURE-FORMAT.md` (names, place, types, limits, no byte-order mark, OCR text where Windows OCR exists, delete removes both).
 - `powershell -NoProfile -STA -File tests/share_api_test.ps1` starts a real host (no tray, no browser, temporary data folder, free port) and checks the share routes over HTTP with a synthetic PNG: token required, folder copy without overwrite, bad requests refused.
 - `python tests/share_ui_test.py` checks the share controls against a mocked API.
+- `node tests/voice_test.js` checks voice-note recording with a fake microphone: the 1:00 limit, release of the microphone on stop, cancel, refusal messages and the clean-up of untrusted notes.
+- `python tests/voice_browser_test.py` runs Chromium's fake microphone: record on a selected annotation, the layer marker, Undo/Redo, a saved audio file, a project round trip that drops a tampered note, and a refused microphone.
 - `powershell -NoProfile -STA -File tests/ai_router_test.ps1` runs the AI help against a fake router (`tests/fake_router.ps1`): loopback-only address, key lookup (environment, then the vault item), cleaned suggestions, a refused key, and a real host that sends the right headers and image and never shows, saves or logs the key.
 - `node tests/aisuggest_test.js` and `python tests/ai_ui_test.py` check how suggestions become annotations and that the panel is off by default and adds nothing until accepted.
 - `node tests/webcam_test.js` checks the camera options, picture-in-picture layout in every corner and size, and that a refused camera never throws.
@@ -206,6 +209,7 @@ modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
+assets/voice.js             Voice notes on annotations (local recording, limits, clean-up)
 modules/Router.ps1         Optional AI help: Fleet router client, key lookup, suggestion clean-up (off by default)
 modules/Cli.ps1            Command registry (CLI and /api/commands), CLI session token file, audit log
 snapshackle.ps1            Command line (run through SnapShackle-CLI.bat)
