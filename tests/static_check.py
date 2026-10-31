@@ -94,6 +94,9 @@ print('PASS: camera picture-in-picture is off by default, local only, and wired 
 assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
 assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+assert 'id="layerAnnounce"' in ui and 'aria-live="polite"' in ui.split('id="layerAnnounce"')[1].split('>')[0] and 'role="group" aria-label="Layers"' in ui
+assert "setAttribute('aria-pressed'" in studio and 'focusedLayer' in studio, 'layer buttons must expose their selected state and keep focus'
+print('PASS: layer buttons expose their selected state, announce it and keep focus')
 voice=(ROOT/'assets/voice.js').read_text(encoding='utf-8')
 assert 'src="/assets/voice.js"' in ui and ui.index('/assets/voice.js') < ui.index('/assets/studio.js'), 'voice.js must load before studio.js'
 assert all(x not in voice for x in ('fetch(', 'XMLHttpRequest', 'WebSocket', 'http://', 'https://', 'sendBeacon')), 'voice notes must stay local'

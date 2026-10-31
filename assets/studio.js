@@ -46,10 +46,17 @@ const editor=new SnapShackleEditor(canvas,(instance)=>{
   const signature=instance.selected+'|'+instance.objects.map(o=>o.type+':'+(o.text||'')+(o.voice?'#v'+o.voice.ms:'')).join('|');
   if(signature===lastLayersSignature)return;
   lastLayersSignature=signature;
-  const layerRoot=$('#layers');layerRoot.replaceChildren();
+  const layerRoot=$('#layers');
+  // The list is rebuilt when the selection changes, so remember which layer button had focus and give it back.
+  const focusedLayer=layerRoot.contains(document.activeElement)?document.activeElement.dataset.layer:null;
+  layerRoot.replaceChildren();
   for(let i=instance.objects.length-1;i>=0;i--){let object=instance.objects[i];let button=document.createElement('button');button.className=i===instance.selected?'active':'';
     button.textContent=`${i+1}. ${object.type}${object.type==='text'?': '+(object.text||'').slice(0,22):''}${object.voice?' (voice '+SnapShackleVoice.formatDuration(object.voice.ms)+')':''}`;
+    button.dataset.layer=String(i);button.setAttribute('aria-pressed',i===instance.selected?'true':'false');
     button.onclick=()=>{instance.selected=i;instance.render()};layerRoot.append(button)}
+  if(focusedLayer!==null)layerRoot.querySelector(`[data-layer="${focusedLayer}"]`)?.focus();
+  const chosen=instance.objects[instance.selected];
+  $('#layerAnnounce').textContent=chosen?`Selected layer ${instance.selected+1} of ${instance.objects.length}: ${chosen.type}${chosen.type==='text'?' '+(chosen.text||'').slice(0,22):''}`:(instance.objects.length?'No layer selected':'');
 });
 async function saveOriginalPng(blob){
   const r=await api('/api/library',{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
