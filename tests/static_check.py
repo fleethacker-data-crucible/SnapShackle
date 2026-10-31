@@ -97,6 +97,13 @@ assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
 assert 'id="layerAnnounce"' in ui and 'aria-live="polite"' in ui.split('id="layerAnnounce"')[1].split('>')[0] and 'role="group" aria-label="Layers"' in ui
 assert "setAttribute('aria-pressed'" in studio and 'focusedLayer' in studio, 'layer buttons must expose their selected state and keep focus'
 print('PASS: layer buttons expose their selected state, announce it and keep focus')
+router=(ROOT/'modules/Router.ps1').read_text(encoding='utf-8')
+assert "aiSuggest = 'off'" in library and "'/api/ai/alt-text'" in host and 'modules/Router.ps1' in host, 'AI help must default to off and be served by the host'
+assert 'id="aiSuggest"' in ui and 'for="aiSuggest"' in ui and 'aria-describedby="aiSuggestHelp"' in ui and 'src="/assets/aisuggest.js"' in ui
+assert 'fetch(' not in (ROOT/'assets/aisuggest.js').read_text(encoding='utf-8') and '/v1/chat' not in studio, 'the page never calls the router; the host does'
+assert "only talks to a router on this computer" in router and 'X-Fairlead-Privacy' in router and 'SNAPSHACKLE_ROUTER_KEY' in router, 'router calls stay on this computer and ask for local models'
+assert 'ROUTER_KEY' not in studio and 'ROUTER_KEY' not in library and 'routerKey' not in library, 'the router key must not be a setting or reach the page'
+print('PASS: AI help is off by default, host-side only, loopback-only and keeps the router key out of settings and the page')
 assert all('id="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')) and all('for="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')), 'numeric layer fields need labels'
 assert "orig.type==='pen'||orig.type==='highlight'" in (ROOT/'assets/editor.js').read_text(encoding='utf-8'), 'only freehand strokes are scaled through points'
 print('PASS: numeric layer fields are labelled and shapes resize through their corners')
@@ -111,7 +118,7 @@ print('PASS: optional record sound is wired, off by default, and kept out of GIF
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must
 # focus only the window for this start (port + start id), never a stale "SnapShackle Studio" tab.
-assert "(editor|studio|gif|stitch|redact|icons|theme|audio|webcam)" in host, 'audio.js must be served with the other studio scripts'
+assert "(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest)" in host, 'audio.js must be served with the other studio scripts'
 assert "__STUDIO_TITLE__" in host and "__STUDIO_TITLE__" in ui and "__STUDIO_TITLE__" in studio
 assert "studioStartId" in host and "StudioTitle" in host and "$script:studioTitle" in host
 assert "SnapShackle Studio " in host
