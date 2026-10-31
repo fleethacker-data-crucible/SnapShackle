@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -83,6 +83,14 @@ assert 'id="shareDestination"' in ui and 'for="shareDestination"' in ui and 'id=
 assert 'Invoke-WebRequest' not in share and 'WebClient' not in share and 'Invoke-RestMethod' not in share and 'http://' not in share and 'https://' not in share, 'sharing must stay local'
 assert '$false)' in share and 'File]::Copy' in share, 'folder copies must never overwrite'
 print('PASS: share destinations stay local, validate the capture name and never overwrite')
+assert 'src="/assets/webcam.js"' in ui and ui.index('/assets/webcam.js') < ui.index('/assets/studio.js'), 'webcam.js must load before studio.js'
+assert 'id="recordCamera"' in ui and 'value="off" selected' in ui.split('id="recordCamera"')[1].split('</select>')[0] and 'id="recordCameraRefresh"' in ui
+assert 'for="recordCamera"' in ui and 'aria-describedby="recordCameraHelp"' in ui
+assert "recordCamera = 'off'" in library and 'recordCameraCorner' in library
+assert 'webcam' in host.split('/assets/(')[1].split(')')[0], 'webcam.js must be served with the other studio scripts'
+assert 'http://' not in (ROOT/'assets/webcam.js').read_text(encoding='utf-8') and 'fetch(' not in (ROOT/'assets/webcam.js').read_text(encoding='utf-8')
+assert 'SnapShackleWebcam.createCompositor' in studio and "getUserMedia({video" not in studio.replace("getUserMedia(c)", ''), 'camera is requested only through SnapShackleWebcam'
+print('PASS: camera picture-in-picture is off by default, local only, and wired through SnapShackleWebcam')
 assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
 assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
@@ -91,7 +99,7 @@ print('PASS: optional record sound is wired, off by default, and kept out of GIF
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must
 # focus only the window for this start (port + start id), never a stale "SnapShackle Studio" tab.
-assert "(editor|studio|gif|stitch|redact|icons|theme|audio)" in host, 'audio.js must be served with the other studio scripts'
+assert "(editor|studio|gif|stitch|redact|icons|theme|audio|webcam)" in host, 'audio.js must be served with the other studio scripts'
 assert "__STUDIO_TITLE__" in host and "__STUDIO_TITLE__" in ui and "__STUDIO_TITLE__" in studio
 assert "studioStartId" in host and "StudioTitle" in host and "$script:studioTitle" in host
 assert "SnapShackle Studio " in host
