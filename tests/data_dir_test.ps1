@@ -67,6 +67,16 @@ try {
         $json = $null; try { $json = $text | ConvertFrom-Json } catch {}
         return [pscustomobject]@{ Status = $status; Text = $text; Json = $json }
     }
+    # The CLI, as a child process with the stand-in LOCALAPPDATA, optionally told the data folder.
+    function Invoke-DemoCli([string[]]$CliArgs) {
+        $psi = [Diagnostics.ProcessStartInfo]::new($psExe)
+        $psi.Arguments = '-NoProfile -NoLogo -ExecutionPolicy Bypass -File "' + (Join-Path $root 'snapshackle.ps1') + '" ' + ($CliArgs -join ' ')
+        $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+        $psi.EnvironmentVariables['LOCALAPPDATA'] = $sentinel; $psi.EnvironmentVariables.Remove('SNAPSHACKLE_DATA_DIR')
+        $p = [Diagnostics.Process]::Start($psi); $o = $p.StandardOutput.ReadToEndAsync(); $e = $p.StandardError.ReadToEndAsync(); $p.WaitForExit()
+        $j = $null; try { $j = $o.Result | ConvertFrom-Json } catch {}
+        return [pscustomobject]@{ Exit = $p.ExitCode; Json = $j; Text = $o.Result + $e.Result }
+    }
     # Runs one host with the given extra arguments, saves a capture, a setting and tags, stops it, and returns what it did.
     function Invoke-DemoRun([string[]]$ExtraArgs) {
         $port = Get-FreePort
@@ -86,6 +96,11 @@ try {
             $saved = Invoke-Api $base 'POST' '/api/library' $null $token $png 'image/png'
             $null = Invoke-Api $base 'PUT' '/api/settings' @{ namePrefix = 'DemoRun' } $token
             $null = Invoke-Api $base 'PUT' ('/api/library/' + $saved.Json.name) @{ tags = @('demo'); note = 'synthetic' } $token
+            if ($ExtraArgs -join ' ' -like '*-DataDir*') {
+                $dataDirValue = [regex]::Match(($ExtraArgs -join ' '), '"([^"]+)"').Groups[1].Value
+                $script:cliWith = Invoke-DemoCli @('app', 'health', '--data-dir', ('"' + $dataDirValue + '"'), '--json')
+                $script:cliWithout = Invoke-DemoCli @('app', 'health', '--json')
+            }
             $null = Invoke-Api $base 'POST' '/api/session/stop' $null $token $null 'application/json' @{ 'X-SnapShackle-Intent' = 'end-session' }
             [void]$proc.WaitForExit(15000)
             return [pscustomobject]@{ Health = $health.Json; Name = $saved.Json.name }
@@ -105,6 +120,11 @@ try {
         $run = Invoke-DemoRun @('-DataDir', ('"' + $folder + '"'))
         Assert-True ($run.Health.customDataDir -eq $true) ('health should say a custom data folder is in use: ' + ($run.Health | ConvertTo-Json -Compress))
         Assert-DemoFolder $folder $run.Name
+    }
+    Test-Case 'the CLI finds that run with --data-dir and reports not running without it' {
+        Assert-True ($script:cliWith.Exit -eq 0 -and $script:cliWith.Json.ok -eq $true) ('--data-dir: ' + $script:cliWith.Text)
+        Assert-True ($script:cliWithout.Exit -eq 3) ('without it the CLI should not find the demo run: ' + $script:cliWithout.Text)
+        Assert-True (@(Get-ChildItem -LiteralPath $sentinel -Force -Recurse).Count -eq 0) 'the CLI wrote to the real LOCALAPPDATA'
     }
     Test-Case '--data-dir= (the launcher form) does the same' {
         $folder = Join-Path $work 'demo-b'

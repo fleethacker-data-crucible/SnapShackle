@@ -38,6 +38,8 @@ or `powershell -NoProfile -STA -ExecutionPolicy Bypass -File Start-SnapShackle.p
 | 7 | "One more thing." | Optional, if the build has them: *Describe image* (needs a router, see `docs/AI-HELP.md`), a voice note on an annotation, a webcam corner on a screen recording. Skip anything that opens a permission prompt you have not rehearsed. |
 | 8 | "Done." | *End session*. Show that the tray icon is gone. |
 
+If you also show the command line, pass the same folder: `SnapShackle-CLI.bat library list --data-dir C:\Demo\SnapShackle-run1 --json`. Without it the CLI looks in the real `%LOCALAPPDATA%` and reports that SnapShackle is not running.
+
 ## 3. What not to do on camera
 
 - Do not use *Capture screen*, *Capture window* or the browser's *Share your screen* picker unless the desktop holds only the synthetic windows: they show whatever is really open.
