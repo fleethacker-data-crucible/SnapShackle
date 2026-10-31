@@ -422,13 +422,15 @@ $('#recordMicRefresh').onclick=()=>refreshMicList(true).catch(fail);
 $('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.recordAudio=SnapShackleAudio.normalizeMode($('#recordAudio').value);settings.recordMicId=SnapShackleAudio.normalizeMicId($('#recordMic').value);settings.recordCamera=SnapShackleWebcam.normalizeMode($('#recordCamera').value);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner($('#recordCameraCorner').value);settings.recordCameraSize=SnapShackleWebcam.normalizeSize($('#recordCameraSize').value);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId($('#recordCameraId').value);settings.shareFolders=parseShareFolders($('#shareFolders').value);settings.theme=$('#theme').value;saveSettings().catch(fail)};
 showSettings();
 document.addEventListener('keydown',event=>{
-  if(['INPUT','TEXTAREA'].includes(document.activeElement?.tagName))return;
+  const target=event.target instanceof Element?event.target:document.activeElement;
+  // Dialogs and controls own their keys; never mutate the editor behind them.
+  if(event.defaultPrevented||document.querySelector('dialog[open]')||target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"],[role="menu"],[role="menubar"],[role="dialog"],[role="alertdialog"]'))return;
   const key=event.key.toLowerCase();if(event.ctrlKey&&key==='z'){event.preventDefault();editor.undo().catch(fail)}
   else if(event.ctrlKey&&key==='y'){event.preventDefault();editor.redo().catch(fail)}
   else if(event.key==='Delete')editor.deleteSelected();
   else if(event.ctrlKey&&event.shiftKey&&key==='s'){event.preventDefault();$('#region').click()}
   else if(event.ctrlKey&&event.shiftKey&&key==='p'){event.preventDefault();$('#projectSave').click()}
-  else if(!event.ctrlKey&&!event.altKey&&!event.metaKey&&!document.querySelector('dialog[open]')&&toolKeys[key]&&document.activeElement?.tagName!=='SELECT'){event.preventDefault();toolKeys[key].click()}
+  else if(!event.ctrlKey&&!event.altKey&&!event.metaKey&&toolKeys[key]){event.preventDefault();toolKeys[key].click()}
 });
 const lifecycleText={tab:'stops when this tab closes',stay:'stays in the tray (--stay); Exit in the tray menu',tray:'stays in the tray (preference); Exit in the tray menu',env:'keeps running (SNAPSHACKLE_AUTO_STOP=0)'};
 async function diagnostics(){let native='unknown',ocr='unavailable',dpi='unknown',keys='none',life='unknown';try{let r=await api('/api/health');if(r.ok){let d=await r.json();native=d.capture?'ready':'unavailable';if(d.version)$('.side-footer-version').textContent='v'+d.version;ocr=d.ocr?'available':'unavailable';dpi=d.dpi||'unknown';life=lifecycleText[d.lifecycle]||'unknown';
