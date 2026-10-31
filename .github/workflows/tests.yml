@@ -31,6 +31,8 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           node tests/webcam_test.js
           if ($LASTEXITCODE) { exit 1 }
+          node tests/aisuggest_test.js
+          if ($LASTEXITCODE) { exit 1 }
       - name: Loopback port fallback (real Windows sockets)
         shell: powershell
         run: |
@@ -75,6 +77,12 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\share_api_test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
+      - name: AI help through a fake router (real host, temporary data folder)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\ai_router_test.ps1
           if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
       - name: Capture format contract (real host, temporary data folder)
         shell: powershell
