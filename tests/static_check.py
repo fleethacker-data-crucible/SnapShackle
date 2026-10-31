@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -94,6 +94,9 @@ print('PASS: camera picture-in-picture is off by default, local only, and wired 
 assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
 assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+assert all('id="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')) and all('for="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')), 'numeric layer fields need labels'
+assert "orig.type==='pen'||orig.type==='highlight'" in (ROOT/'assets/editor.js').read_text(encoding='utf-8'), 'only freehand strokes are scaled through points'
+print('PASS: numeric layer fields are labelled and shapes resize through their corners')
 print('PASS: video format (WebM or MP4) is a saved setting, chosen through pickRecorderType')
 evidence=(ROOT/'tools/evidence-capture.ps1').read_text(encoding='utf-8')
 assert 'CopyFromScreen' not in evidence and 'Get-SnapShackleRect' not in evidence and 'Get-SnapShackleWindows' not in evidence, 'evidence capture must only capture windows it draws'
