@@ -329,6 +329,13 @@ Test-Case 'Record sound is off by default and invalid audio settings are ignored
         $null = Set-SnapShackleSettings $path @{ recordAudio = 'off'; recordMicId = '' }
         $back = Get-SnapShackleSettings $path
         Assert-True ($back.recordAudio -eq 'off' -and $back.recordMicId -eq '') 'sound could not be turned back off'
+        Assert-True ($back.recordFormat -eq 'webm') 'video format should default to webm'
+        $null = Set-SnapShackleSettings $path @{ recordFormat = 'MP4' }
+        Assert-True ((Get-SnapShackleSettings $path).recordFormat -eq 'mp4') 'mp4 choice was not saved'
+        $null = Set-SnapShackleSettings $path @{ recordFormat = 'avi' }
+        Assert-True ((Get-SnapShackleSettings $path).recordFormat -eq 'mp4') 'invalid format replaced a saved choice'
+        $null = Set-SnapShackleSettings $path @{ recordFps = 4 }
+        Assert-True ((Get-SnapShackleSettings $path).recordFormat -eq 'mp4') 'partial update dropped the format'
     } finally { [IO.Directory]::Delete($base, $true) }
 }
 

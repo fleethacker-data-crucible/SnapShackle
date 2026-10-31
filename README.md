@@ -133,7 +133,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 | Editor | Arrows, boxes, ellipses, lines, pen, highlighter, text, numbered steps, opaque redaction, pixelate, blur; layer reordering; drag and corner resizing; object duplication/deletion | Some object transforms remain simplified; complex multi-object grouping not available |
 | History/project | Undo/redo, editable JSON project, crop, image import/paste/drag-drop, PNG/JPEG, clipboard, zoom | Save editable JSON **only for trusted local use**, since it includes the original pixels |
 | Library | Save PNGs locally, browse thumbnails, search names/tags/notes, edit tags/notes, delete | No cloud sync or SQLite, limited to newest 250 search hits |
-| Screen video | WebM via browser MediaRecorder. Optional sound is off until chosen: system or tab audio, a microphone, or both mixed into one Opus track | No MP4 without additional codecs. System audio needs Share audio ticked in the Edge or Chrome prompt. A declined microphone or missing Share audio records video only. GIF stays silent. Sound stays on this computer |
+| Screen video | WebM, or MP4 (H.264) where Edge or Chrome can write it, via browser MediaRecorder; choose under Workflows, Settings, Video file format. Optional sound is off until chosen: system or tab audio, a microphone, or both mixed into one Opus track | MP4 depends on the browser's own encoder: if it cannot write MP4 the recording is WebM and the status bar says so. No transcoding, trimming or timeline editing. System audio needs Share audio ticked in the Edge or Chrome prompt. A declined microphone or missing Share audio records video only. GIF stays silent. Sound stays on this computer |
 | Share | Library panel, Share: copy a capture into a folder you set up (OneDrive or SharePoint sync folder, network share, USB drive; up to 8, never overwrites), put the file on the clipboard to paste into Outlook or Teams, show it in Explorer, or open it in the default app | Local only: SnapShackle makes no network calls and holds no tokens, so there is no direct Slack, Teams, Confluence, Jira or e-mail upload. A cloud service gets the file only when its own desktop app syncs the folder. Folder must already exist |
 | Animated GIF | Offline dependency-free encoder; 640×480 max, 100 frames | 3-3-2 limited palette, unoptimized file sizes; tested for valid GIF decoding |
 | Long screenshots | Automatic overlap-aware stitching of multiple screenshots; optional browser shared-screen sampling while **you scroll the target** | Not an autonomous scroll driver for arbitrary Windows apps; sticky headers/transitions can reduce stitching quality |
@@ -149,7 +149,7 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 - No universal autonomous scrolling through arbitrary external applications.
 - OCR is validated on Windows 11 only with English synthetic text; run `tests/windows_ocr_test.ps1 -RequireOcr` on each managed workstation before relying on it.
 - No signed installer, MSI, policy-managed settings, centralized telemetry, update service, multi-user permissions, or full enterprise accessibility certification.
-- Not supported: panoramic capture, camera/PIP recording, timeline video editing, multi-track audio editing, MP4 export, enterprise managed deployment, or direct cloud share-destination integrations (Slack, Teams, Confluence, Jira): sharing is limited to folders, the clipboard, Explorer and the default app.
+- Not supported: panoramic capture, camera/PIP recording, timeline video editing, multi-track audio editing, enterprise managed deployment, or direct cloud share-destination integrations (Slack, Teams, Confluence, Jira): sharing is limited to folders, the clipboard, Explorer and the default app.
 
 ## Testing and development
 
@@ -171,7 +171,8 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `node tests/gif_test.js` followed by `python tests/verify_gif.py` validates animated GIF decoding in Pillow.
 - `powershell -NoProfile -STA -File tests/share_api_test.ps1` starts a real host (no tray, no browser, temporary data folder, free port) and checks the share routes over HTTP with a synthetic PNG: token required, folder copy without overwrite, bad requests refused.
 - `python tests/share_ui_test.py` checks the share controls against a mocked API.
-- `node tests/audio_test.js` checks the record-sound choices and the video-only fallback when Share audio or the microphone is unavailable.
+- `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
+- `python tests/mp4_record_test.py` records a synthetic canvas in installed Edge (then Chrome) and checks the bytes are a real MP4 (`ftyp` box) and a real WebM. It skips with a message if no installed browser can write MP4; Playwright's bundled Chromium cannot.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
 Automated Chromium tests **do not** verify the native Windows capture integration or enterprise managed-workstation compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.

@@ -15,7 +15,7 @@ function noteInvalidSession(response){
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}}).then(noteInvalidSession);
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',shareFolders:[]};
+let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',shareFolders:[],recordFormat:'webm'};
 // Preferences saved under earlier names (CutterMk, Lasso, SnipHero) are copied forward once to
 // 'snapshackle-settings'; the old keys are left in place so an older build still finds them.
 function migrateStorageKey(key,legacyKeys){try{const current=localStorage.getItem(key);if(current!==null)return current;for(const old of legacyKeys){const value=localStorage.getItem(old);if(value!==null){try{localStorage.setItem(key,value)}catch{}return value}}}catch{}return null}
@@ -23,6 +23,7 @@ try {const saved=migrateStorageKey('snapshackle-settings',['cuttermk-settings','
 settings.recordAudio=SnapShackleAudio.normalizeMode(settings.recordAudio);
 settings.recordMicId=SnapShackleAudio.normalizeMicId(settings.recordMicId);
 settings.shareFolders=Array.isArray(settings.shareFolders)?settings.shareFolders:[];
+settings.recordFormat=SnapShackleAudio.normalizeFormat(settings.recordFormat);
 function notify(message){$('#status').textContent=message}
 function fail(error){console.error('[SnapShackle]',error);notify('⚠ '+(error?.message||error))}
 function sanitizePrefix(s){return (s||'SnapShackle').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'SnapShackle'}
@@ -223,8 +224,8 @@ $('#record').onclick=async()=>{
    });
    earlyContext=null;
    let stream=audioSession.stream,hasAudio=!!audioSession.plan.hasAudio;
-   let supported=SnapShackleAudio.mimeCandidates(hasAudio).find(t=>MediaRecorder.isTypeSupported(t));
-   if(!supported)throw Error('WebM recording not supported');
+   let pick=SnapShackleAudio.pickRecorderType(hasAudio,settings.recordFormat,t=>MediaRecorder.isTypeSupported(t)),supported=pick.mime;
+   if(!supported)throw Error('Video recording is not supported in this browser');
    try{recorder=new MediaRecorder(stream,SnapShackleAudio.recorderOptions(supported,hasAudio))}
    catch(error){
      const retry=SnapShackleAudio.onRecorderConstructError(hasAudio);
@@ -233,7 +234,7 @@ $('#record').onclick=async()=>{
      stream=new MediaStream(stream.getVideoTracks());
      audioSession={stream,plan:SnapShackleAudio.videoOnlyPlan(mode,retry.message),cleanup(){}};
      hasAudio=false;
-     supported=SnapShackleAudio.mimeCandidates(false).find(t=>MediaRecorder.isTypeSupported(t));
+     pick=SnapShackleAudio.pickRecorderType(false,settings.recordFormat,t=>MediaRecorder.isTypeSupported(t));supported=pick.mime;
      if(!supported)throw error;
      recorder=new MediaRecorder(stream,SnapShackleAudio.recorderOptions(supported,false));
    }
@@ -241,18 +242,18 @@ $('#record').onclick=async()=>{
    const chunks=[];
    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
    recorder.onstop=()=>{
-     try{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName('webm'))}catch(e){fail(e)}
+     try{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName(pick.ext))}catch(e){fail(e)}
      try{stream.getTracks().forEach(t=>t.stop())}catch{}
      try{audioSession?.cleanup()}catch{}
      audioSession=null;recordStream=null;recorder=null;setRecordAudioLive(null);
      setButton($('#record'),'record','Record video');
-     notify(hasAudio?'WebM recording with sound exported. The file stays on this computer.':'WebM recording exported');
+     notify((hasAudio?pick.ext.toUpperCase()+' recording with sound exported. The file stays on this computer.':pick.ext.toUpperCase()+' recording exported')+(pick.fellBack?' · '+pick.message:''));
    };
    for(const track of stream.getVideoTracks())track.onended=()=>{if(recorder?.state==='recording')recorder.stop()};
    recorder.start(1000);
    setButton($('#record'),'stop',hasAudio?'Stop recording (sound on)':'Stop recording',true);
-   if(mode==='off')notify('Recording: use Stop to export WebM');
-   else{setRecordAudioLive(audioSession.plan);notify(audioSession.plan.message||'Recording with sound. Use Stop to export WebM. Sound stays on this computer.')}
+   if(mode==='off')notify('Recording '+pick.ext.toUpperCase()+': use Stop to export'+(pick.fellBack?' · '+pick.message:''));
+   else{setRecordAudioLive(audioSession.plan);notify(audioSession.plan.message||'Recording with sound. Use Stop to export '+pick.ext.toUpperCase()+'. Sound stays on this computer.')}
  }catch(e){
    try{audioSession?.stream?.getTracks().forEach(t=>t.stop())}catch{}
    try{audioSession?.cleanup()}catch{}
@@ -339,13 +340,13 @@ async function refreshMicList(ask){
   try{if(navigator.mediaDevices?.enumerateDevices){const devices=await navigator.mediaDevices.enumerateDevices();mic.replaceChildren(new Option('Default microphone',''));(devices||[]).filter(d=>d.kind==='audioinput'&&d.deviceId).forEach((d,i)=>mic.add(new Option(d.label||('Microphone '+(i+1)),SnapShackleAudio.normalizeMicId(d.deviceId))))}}catch(e){if(!ask)console.warn('[SnapShackle] microphones',e)}
   ensureMicOption(keep);
 }
-function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);ensureMicOption(settings.recordMicId);syncMicRow();$('#shareFolders').value=formatShareFolders(settings.shareFolders);refreshShare();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshMicList(false)}
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);$('#recordFormat').value=SnapShackleAudio.normalizeFormat(settings.recordFormat);ensureMicOption(settings.recordMicId);syncMicRow();$('#shareFolders').value=formatShareFolders(settings.shareFolders);refreshShare();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshMicList(false)}
 // Theme follows Lazarette: dark by default, light on request, or match Windows.
 function applyTheme(choice){const theme=window.SnapShackleTheme?SnapShackleTheme.apply(choice):'dark';const toggle=$('#themeToggle');
   if(toggle){toggle.innerHTML=SnapShackleIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
 $('#themeToggle').onclick=()=>{settings.theme=(window.SnapShackleTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
 $('#theme').onchange=()=>{settings.theme=$('#theme').value;applyTheme(settings.theme)};
-function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId),shareFolders:Array.isArray(saved.shareFolders)?saved.shareFolders:settings.shareFolders}}
+function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId),shareFolders:Array.isArray(saved.shareFolders)?saved.shareFolders:settings.shareFolders,recordFormat:SnapShackleAudio.normalizeFormat(saved.recordFormat!=null?saved.recordFormat:settings.recordFormat)}}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
 async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();

@@ -83,6 +83,10 @@ assert 'id="shareDestination"' in ui and 'for="shareDestination"' in ui and 'id=
 assert 'Invoke-WebRequest' not in share and 'WebClient' not in share and 'Invoke-RestMethod' not in share and 'http://' not in share and 'https://' not in share, 'sharing must stay local'
 assert '$false)' in share and 'File]::Copy' in share, 'folder copies must never overwrite'
 print('PASS: share destinations stay local, validate the capture name and never overwrite')
+assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
+assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
+assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+print('PASS: video format (WebM or MP4) is a saved setting, chosen through pickRecorderType')
 print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must

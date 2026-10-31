@@ -71,8 +71,9 @@ function Get-SnapShackleCaptureList([string]$Library, [string]$Query, [string]$P
 # stayInTray: keep the tray icon and hotkeys after the studio tab closes (like -Stay; Exit is in the tray menu).
 # recordAudio: off | system | mic | both. Off leaves screen video silent, as earlier builds did.
 # shareFolders: up to 8 { name, path } folders the Share button can copy a capture into (see Share.ps1).
+# recordFormat: webm | mp4. MP4 only where the browser's MediaRecorder can write it; otherwise the recording is WebM.
 # recordMicId: optional microphone device id chosen in the studio. Empty uses the browser default.
-$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; shareFolders = @() }
+$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; shareFolders = @(); recordFormat = 'webm' }
 function Get-SnapShackleSettings([string]$Path) {
     $settings = [ordered]@{}
     foreach ($key in $script:SnapShackleSettingDefaults.Keys) { $settings[$key] = $script:SnapShackleSettingDefaults[$key] }
@@ -113,6 +114,10 @@ function ConvertTo-SnapShackleSettings($Value) {
         if ($audio -in @('off', 'system', 'mic', 'both')) { $clean.recordAudio = $audio }
     }
     if ($names -contains 'shareFolders') { $clean.shareFolders = ConvertTo-SnapShackleShareFolders $Value.shareFolders }
+    if ($names -contains 'recordFormat') {
+        $format = ([string]$Value.recordFormat).Trim().ToLowerInvariant()
+        if ($format -in @('webm', 'mp4')) { $clean.recordFormat = $format }
+    }
     if ($names -contains 'recordMicId') {
         $micId = ([string]$Value.recordMicId).Trim() -replace '[^A-Za-z0-9_+=./-]', ''
         if ($micId.Length -gt 256) { $micId = $micId.Substring(0, 256) }
