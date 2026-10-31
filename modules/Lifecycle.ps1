@@ -120,9 +120,14 @@ function Test-SnapShackleSecretEquals([string]$A, [string]$B) {
 # Launcher options in the .bat style (--stay, --replace, --no-browser, --no-tray), for arguments that
 # PowerShell did not bind to a parameter. Returns the switches found and anything unknown.
 function Read-SnapShackleLaunchOptions([string[]]$Arguments) {
-    $options = @{ Stay = $false; Replace = $false; NoBrowser = $false; NoTray = $false; Unknown = @() }
-    foreach ($a in @($Arguments)) {
+    $options = @{ Stay = $false; Replace = $false; NoBrowser = $false; NoTray = $false; DataDir = $null; Unknown = @() }
+    $list = @($Arguments)
+    for ($i = 0; $i -lt $list.Count; $i++) {
+        $a = $list[$i]
         if (-not $a) { continue }
+        # --data-dir <folder> or --data-dir=<folder>: keep everything under that folder (see Set-SnapShackleDataRoot).
+        if ($a -match '^--?data-?dir=(.+)$') { $options.DataDir = $Matches[1]; continue }
+        if ($a -match '^--?data-?dir$') { if ($i + 1 -lt $list.Count) { $i++; $options.DataDir = $list[$i] } else { $options.Unknown += $a }; continue }
         switch -Regex ($a) {
             '^--?stay$' { $options.Stay = $true; continue }
             '^--?replace$' { $options.Replace = $true; continue }
@@ -132,6 +137,22 @@ function Read-SnapShackleLaunchOptions([string[]]$Arguments) {
         }
     }
     return $options
+}
+
+# A run with its own data folder (a demo, a trial, a fresh start): SnapShackle writes captures, settings and logs under
+# <DataDir>\SnapShackle instead of %LOCALAPPDATA%\SnapShackle, and never reads or migrates the real ones. It works by
+# pointing this process's LOCALAPPDATA at the folder, so every path SnapShackle derives follows. SNAPSHACKLE_DATA_DIR
+# is the same option from the environment; the parameter wins. Returns the folder, or $null when not used.
+# Throws a plain message for a relative path or one with wildcard characters.
+function Set-SnapShackleDataRoot([string]$DataDir) {
+    if (-not $DataDir) { $DataDir = [Environment]::GetEnvironmentVariable('SNAPSHACKLE_DATA_DIR') }
+    if (-not $DataDir) { return $null }
+    $DataDir = $DataDir.Trim().Trim('"')
+    if (-not [IO.Path]::IsPathRooted($DataDir) -or $DataDir -match '[*?<>|"]' -or $DataDir.Length -lt 4) { throw ('The data folder must be a full path such as C:\Demo\SnapShackle (got: ' + $DataDir + ')') }
+    $full = [IO.Path]::GetFullPath($DataDir).TrimEnd('')
+    [void][IO.Directory]::CreateDirectory($full)
+    [Environment]::SetEnvironmentVariable('LOCALAPPDATA', $full, 'Process')
+    return $full
 }
 
 # ---- runtime files and finding running instances ----

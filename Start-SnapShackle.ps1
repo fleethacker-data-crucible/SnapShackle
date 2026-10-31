@@ -20,6 +20,8 @@ param(
     [switch]$Replace,
     # Tests only: skip the single-instance check (a headless -NoTray test host next to a running SnapShackle).
     [switch]$AllowSecondInstance,
+    # Keep captures, settings and logs under <DataDir>\SnapShackle, not %LOCALAPPDATA% (a demo or trial run). Also --data-dir.
+    [string]$DataDir,
     # Launcher-style options: --stay, --replace, --no-browser, --no-tray.
     [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest
 )
@@ -34,6 +36,9 @@ if ($launch.Stay) { $Stay = $true }
 if ($launch.Replace) { $Replace = $true }
 if ($launch.NoBrowser) { $NoBrowser = $true }
 if ($launch.NoTray) { $NoTray = $true }
+if ($launch.DataDir -and -not $DataDir) { $DataDir = $launch.DataDir }
+$script:SnapShackleDataRoot = Set-SnapShackleDataRoot $DataDir
+if ($script:SnapShackleDataRoot) { Write-Host ('Data folder: ' + $script:SnapShackleDataRoot + '\SnapShackle (not %LOCALAPPDATA%)') -ForegroundColor Yellow }
 foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option ' + $unknown) }
 . (Join-Path $root 'modules/LocalHttp.ps1')
 . (Join-Path $root 'modules/Native.ps1')
@@ -205,7 +210,7 @@ function Invoke-SnapShackleRequest($Context) {
         $html=[IO.File]::ReadAllText((Join-Path $root 'index.html')).Replace('__SNAPSHACKLE_VERSION__',$SnapShackleVersion).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($html)) 'text/html; charset=utf-8';return
     }
-    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest)\.js$') {
+    if ($method -eq 'GET' -and $path -match '^/assets/(editor|studio|gif|stitch|redact|icons|theme|audio|webcam|aisuggest|voice)\.js$') {
         $filename=$Matches[1]+'.js'
         $source=[IO.File]::ReadAllText((Join-Path $root ('assets/'+$filename))).Replace('__SESSION_TOKEN__',$sessionToken).Replace('__STUDIO_TITLE__',$script:studioTitle)
         Send-Response $Context ([Text.Encoding]::UTF8.GetBytes($source)) 'application/javascript; charset=utf-8';return
@@ -245,7 +250,7 @@ function Invoke-SnapShackleRequest($Context) {
     }
     if ($path -eq '/api/commands' -and $method -eq 'GET') { Send-Json $Context (Get-SnapShackleCommandsDocument);return }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
+        Send-Json $Context @{capture=$true;customDataDir=[bool]$script:SnapShackleDataRoot;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
         Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {

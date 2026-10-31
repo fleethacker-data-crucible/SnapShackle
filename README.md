@@ -59,7 +59,10 @@ Launch-SnapShackle.bat -Port 9000
 Launch-SnapShackle.bat -Diagnostics
 Launch-SnapShackle.bat --stay
 Launch-SnapShackle.bat --replace
+Launch-SnapShackle.bat --data-dir C:\Demo\SnapShackle-run1
 ```
+
+`--data-dir <full path>` (or `-DataDir`, or the `SNAPSHACKLE_DATA_DIR` environment variable) keeps captures, settings and logs under `<path>\SnapShackle` instead of `%LOCALAPPDATA%\SnapShackle`, and skips the migration of older data. Use it for a demo or a trial run; the console prints the folder in yellow and `/api/health` reports `customDataDir`. See [docs/DEMO-WALKTHROUGH.md](docs/DEMO-WALKTHROUGH.md). `Stop-SnapShackle.ps1 -DataDir <path>` looks for that run's runtime files, but still stops every SnapShackle process it finds; end a demo with *End session* instead.
 
 `-NoBrowser` keeps the host running and prints its URL (it then stops once a studio tab that connected has closed; add `--stay` to keep it). `-Port` changes the **preferred** port but still safely falls back on collision. `-Diagnostics` prints the PowerShell/process policy and tests a loopback socket bind; it then exits without starting the long-running host. For detailed network/startup validation on a Windows PC, run `tests/windows_port_smoke.ps1` in an **authorized** PowerShell session. It temporarily holds an unused local port, starts SnapShackle separately on that preferred port, confirms fallback and startup, and closes only the test-owned processes. It never touches other apps.
 
@@ -129,6 +132,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 | Area | What works | Caveats |
 |---|---|---|
 | Hand-off to other Fleet apps | `tools\handoff.ps1` lists captures (filter by text, tag, date, name) or copies them with their sidecars to a folder with a `handoff.json` manifest (hashes, tags, note, optional OCR text) for Bowerbird, Capstan and Scrimshaw. See [docs/HANDOFF.md](docs/HANDOFF.md) | Reads the folder directly; never overwrites in the output folder; lists at most 250 captures. The receiving apps' side is theirs |
+| Voice notes on annotations | Select an annotation, **Record** (Workflows), **Stop**: a clip up to 1:00 (Opus/WebM, about 24 kbps) is kept on that annotation, marked in the Layers list, played back, saved as an audio file or deleted. Undo and Redo carry it; an editable project saved from the studio includes it. The microphone is opened only while recording and released on stop; nothing is uploaded | Local only and short by design. A loaded project's notes are checked (type, length, size) and dropped if they do not fit. No transcript. The exported PNG carries no audio. Needs the browser's microphone permission |
 | AI help (opt-in) | Off until chosen under Workflows, Settings. **Describe image** writes alt text; **Suggest annotations** lists covers, boxes, arrows, steps and captions you tick before anything is added (one undo removes them). The host asks the Fleet router (Fairlead, `127.0.0.1:8776`, override `SNAPSHACKLE_AI_ENDPOINT_URL`) and asks for local models only unless you choose otherwise. The router key is read from the Lazarette item `snapshackle-router-key` (override `SNAPSHACKLE_LAZARETTE_ITEM_Router`) or `SNAPSHACKLE_ROUTER_KEY` and is never saved or shown. See [docs/AI-HELP.md](docs/AI-HELP.md) | Only a loopback router address is accepted. Reading the vault needs Lazarette already unlocked in the process that starts SnapShackle; otherwise a launcher sets the environment variable. Suggestions are a model's guess: check each one. Tested against a fake router, not a live one |
 | Desktop screenshot | Entire desktop, selected monitor, selected visible window, native drag-to-select region | Standard `CopyFromScreen`; not minimized/occluded windows or DRM-protected content |
 | Browser screenshot | Browser screen/window/tab capture after user permission | Browser support and permission required |
@@ -180,12 +184,16 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `powershell -NoProfile -STA -File tests/share_api_test.ps1` starts a real host (no tray, no browser, temporary data folder, free port) and checks the share routes over HTTP with a synthetic PNG: token required, folder copy without overwrite, bad requests refused.
 - `python tests/share_ui_test.py` checks the share controls against a mocked API.
 - `powershell -NoProfile -File tests/handoff_test.ps1` checks the hand-off helper on a synthetic capture folder: list and filters, export with matching hashes, no overwrite, dry run, and the exit codes.
+- `node tests/voice_test.js` checks voice-note recording with a fake microphone: the 1:00 limit, release of the microphone on stop, cancel, refusal messages and the clean-up of untrusted notes.
+- `python tests/voice_browser_test.py` runs Chromium's fake microphone: record on a selected annotation, the layer marker, Undo/Redo, a saved audio file, a project round trip that drops a tampered note, and a refused microphone.
 - `powershell -NoProfile -STA -File tests/ai_router_test.ps1` runs the AI help against a fake router (`tests/fake_router.ps1`): loopback-only address, key lookup (environment, then the vault item), cleaned suggestions, a refused key, and a real host that sends the right headers and image and never shows, saves or logs the key.
 - `node tests/aisuggest_test.js` and `python tests/ai_ui_test.py` check how suggestions become annotations and that the panel is off by default and adds nothing until accepted.
 - `node tests/webcam_test.js` checks the camera options, picture-in-picture layout in every corner and size, and that a refused camera never throws.
 - `python tests/webcam_browser_test.py` runs Chromium's fake camera: the picture lands in the chosen corner, the composite records, the camera is released on stop, a live camera is announced, and a refused camera still records.
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
 - `python tests/mp4_record_test.py` records a synthetic canvas in installed Edge (then Chrome) and checks the bytes are a real MP4 (`ftyp` box) and a real WebM. It skips with a message if no installed browser can write MP4; Playwright's bundled Chromium cannot.
+- `powershell -NoProfile -STA -File tests/data_dir_test.ps1` starts real hosts with `-DataDir` and `--data-dir=` and proves captures, sidecars, settings and logs land in that folder while an empty stand-in for `%LOCALAPPDATA%` stays empty.
+- `python tests/layers_a11y_test.py` checks that layer buttons expose `aria-pressed`, that the selected layer is announced by name in a live region, and that keyboard focus stays on the chosen layer when the list is rebuilt.
 - `python tests/layers_numeric_test.py` checks the Position and size fields of the selected layer: exact X, Y, width and height (read back from the saved project), one Undo step per edit, refusal of an empty field, clamping to the image, fixed-size layers, and that dragging a rectangle's corner handle resizes it.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
@@ -204,6 +212,7 @@ modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
+assets/voice.js             Voice notes on annotations (local recording, limits, clean-up)
 modules/Router.ps1         Optional AI help: Fleet router client, key lookup, suggestion clean-up (off by default)
 modules/Cli.ps1            Command registry (CLI and /api/commands), CLI session token file, audit log
 snapshackle.ps1            Command line (run through SnapShackle-CLI.bat)
