@@ -27,6 +27,10 @@ The vault item name is for the Fleet items table in Lazarette (`docs/FLEET-ITEMS
 
 Only the PNG (scaled), a fixed instruction, and (for suggestions) the OCR text, and only to the router address above. An error from the router is shown in plain words; the key is never part of one.
 
+## Command line
+
+`SnapShackle-CLI.bat ai status`, `ai describe --file shot.png` and `ai suggest --file shot.png` call the same routes (`--json` for the document). Turn AI help on first: `settings set --key aiSuggest --value on`.
+
 ## Tests
 
 `tests/ai_router_test.ps1` runs against `tests/fake_router.ps1` (no real router, no network): address rules, key lookup, suggestion clean-up, a refused key, a router that is down, off by default, headers and image reaching the router, the key kept out of settings, files and answers. `tests/aisuggest_test.js` and `tests/ai_ui_test.py` cover the panel. A live check against a real Fairlead is not part of the automated tests.
