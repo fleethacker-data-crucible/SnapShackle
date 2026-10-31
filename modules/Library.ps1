@@ -1,4 +1,5 @@
 # Capture library helpers shared by the HTTP host and the hotkey/tray thread.
+. (Join-Path $PSScriptRoot 'Share.ps1')
 # Each capture NAME.png may have a sidecar NAME.png.meta.json: {tags, note, ocr}.
 function New-SnapShackleCaptureName {
     'SnapShackle-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8) + '.png'
@@ -72,8 +73,9 @@ function Get-SnapShackleCaptureList([string]$Library, [string]$Query, [string]$P
 # recordCamera: off | on (picture-in-picture camera in screen video), recordCameraCorner: br|bl|tr|tl,
 # recordCameraSize: small|medium|large, recordCameraId: optional camera device id. Off leaves video as before.
 # recordFormat: webm | mp4. MP4 only where the browser's MediaRecorder can write it; otherwise the recording is WebM.
+# shareFolders: up to 8 { name, path } folders the Share button can copy a capture into (see Share.ps1).
 # recordMicId: optional microphone device id chosen in the studio. Empty uses the browser default.
-$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; recordCamera = 'off'; recordCameraCorner = 'br'; recordCameraSize = 'medium'; recordCameraId = ''; recordFormat = 'webm' }
+$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; recordCamera = 'off'; recordCameraCorner = 'br'; recordCameraSize = 'medium'; recordCameraId = ''; recordFormat = 'webm'; shareFolders = @() }
 function Get-SnapShackleSettings([string]$Path) {
     $settings = [ordered]@{}
     foreach ($key in $script:SnapShackleSettingDefaults.Keys) { $settings[$key] = $script:SnapShackleSettingDefaults[$key] }
@@ -130,6 +132,7 @@ function ConvertTo-SnapShackleSettings($Value) {
         if ($cameraId.Length -gt 256) { $cameraId = $cameraId.Substring(0, 256) }
         $clean.recordCameraId = $cameraId
     }
+    if ($names -contains 'shareFolders') { $clean.shareFolders = ConvertTo-SnapShackleShareFolders $Value.shareFolders }
     if ($names -contains 'recordFormat') {
         $format = ([string]$Value.recordFormat).Trim().ToLowerInvariant()
         if ($format -in @('webm', 'mp4')) { $clean.recordFormat = $format }
@@ -146,7 +149,7 @@ function Set-SnapShackleSettings([string]$Path, $Changes) {
     $current.Remove('saved')
     $clean = ConvertTo-SnapShackleSettings $Changes
     foreach ($key in $clean.Keys) { $current[$key] = $clean[$key] }
-    [IO.File]::WriteAllText($Path, (ConvertTo-Json -InputObject $current -Depth 3), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($Path, (ConvertTo-Json -InputObject $current -Depth 5), [Text.UTF8Encoding]::new($false))
     $current.saved = $true
     return $current
 }
