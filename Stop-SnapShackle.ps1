@@ -8,16 +8,19 @@
   SnapShackle writes to %LOCALAPPDATA%\SnapShackle\logs, then looks for any PowerShell running Start-SnapShackle.ps1.
   Each one is asked to stop so it can remove its tray icon and release its hotkeys; one that does
   not answer within a few seconds is force-stopped. Stale runtime files are removed.
+.PARAMETER DataDir
+  Look for runtime files under this data folder (the one a run with -DataDir used) instead of %LOCALAPPDATA%.
 .PARAMETER Quiet
   Print nothing unless something was stopped.
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File Stop-SnapShackle.ps1
 #>
 [CmdletBinding()]
-param([switch]$Quiet)
+param([switch]$Quiet, [string]$DataDir)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Lifecycle.ps1')
+[void](Set-SnapShackleDataRoot $DataDir)
 # Also %LOCALAPPDATA%\CutterMk\logs, so an instance started by a CutterMk build before the rename is stopped too.
 $stopped = @(Stop-SnapShackleProcesses @((Get-SnapShackleRuntimeDir $root), (Get-SnapShackleLegacyRuntimeDir)))
 if ($stopped.Count -gt 0) {
