@@ -137,6 +137,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 | Screen video | WebM, or MP4 (H.264) where Edge or Chrome can write it, via browser MediaRecorder; choose under Workflows, Settings, Video file format. Optional sound is off until chosen: system or tab audio, a microphone, or both mixed into one Opus track | MP4 depends on the browser's own encoder: if it cannot write MP4 the recording is WebM and the status bar says so. No transcoding, trimming or timeline editing. System audio needs Share audio ticked in the Edge or Chrome prompt. A declined microphone or missing Share audio records video only. GIF stays silent. Sound stays on this computer |
 | Webcam picture-in-picture | Optional camera in a chosen corner and size of a screen video, drawn onto the recording in the browser; off until chosen, announced while live, released on stop. A refused or missing camera records without it | Camera permission is the browser's. GIF, stills and scrolling capture ignore the camera. No separate camera track, no background removal, no webcam-only recording. Recording in a background tab depends on the browser not throttling timers while media is captured |
 | Share | Library panel, Share: copy a capture into a folder you set up (OneDrive or SharePoint sync folder, network share, USB drive; up to 8, never overwrites), put the file on the clipboard to paste into Outlook or Teams, show it in Explorer, or open it in the default app | Local only: SnapShackle makes no network calls and holds no tokens, so there is no direct Slack, Teams, Confluence, Jira or e-mail upload. A cloud service gets the file only when its own desktop app syncs the folder. Folder must already exist |
+| CLI and local API | `SnapShackle-CLI.bat <noun> <verb>` with `--json`, `--out`, `--yes`, `--dry-run` and exit codes: health, screen and window lists, window and rectangle capture, OCR, library list/get/save/tag/delete, share, settings, start and stop. One registry feeds the CLI and `GET /api/commands`. See [docs/CLI.md](docs/CLI.md) | Partial parity: annotation, recording, scrolling capture and drag-to-select stay in the browser (each button has a command or a stated reason, checked by a test). Needs a running SnapShackle (`app start` starts one headless) |
 | Animated GIF | Offline dependency-free encoder; 640×480 max, 100 frames | 3-3-2 limited palette, unoptimized file sizes; tested for valid GIF decoding |
 | Long screenshots | Automatic overlap-aware stitching of multiple screenshots; optional browser shared-screen sampling while **you scroll the target** | Not an autonomous scroll driver for arbitrary Windows apps; sticky headers/transitions can reduce stitching quality |
 | OCR | Attempts Windows.Media.Ocr on PowerShell 5.1 where WinRT is available; tries browser TextDetector otherwise | Windows integration is tested on Windows 11 with synthetic images (`tests/windows_ocr_test.ps1`: text, word boxes, oversize images, blank image); not yet checked on a managed workstation or with non-English language packs. Browser API often missing |
@@ -151,6 +152,7 @@ Pixelation and blur are **visual effects, not secure sanitization**. Opaque reda
 - No universal autonomous scrolling through arbitrary external applications.
 - OCR is validated on Windows 11 only with English synthetic text; run `tests/windows_ocr_test.ps1 -RequireOcr` on each managed workstation before relying on it.
 - No signed installer, MSI, policy-managed settings, centralized telemetry, update service, multi-user permissions, or full enterprise accessibility certification.
+- CLI/API parity is partial: editing, recording and scrolling capture stay in the browser ([docs/CLI.md](docs/CLI.md)).
 - Not supported: panoramic capture, separate camera tracks or webcam-only recording, timeline video editing, multi-track audio editing, enterprise managed deployment, or direct cloud share-destination integrations (Slack, Teams, Confluence, Jira): sharing is limited to folders, the clipboard, Explorer and the default app.
 
 ## Testing and development
@@ -166,6 +168,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/static_check.py` checks source structure/routes and UI wiring.
 - `python tests/launcher_static_check.py` verifies launcher settings, TCP adapter, and dynamic port propagation.
 - `tests/windows_port_smoke.ps1` verifies localhost collision behavior on Windows 5.1 (requires user-authorized runtime).
+- `powershell -NoProfile -File tests/commands_test.ps1` is the CLI/API parity check (every host route and studio button has a command or a reason). `powershell -NoProfile -STA -File tests/cli_test.ps1` runs the CLI end to end against a headless host in a temporary data folder, with synthetic images and one synthetic window.
 - `powershell -NoProfile -STA -File tests/windows_ocr_test.ps1` runs the Windows OCR bridge on text drawn in memory (no screen capture). It skips with a message where OCR is missing; add `-RequireOcr` to fail instead.
 - `tools/evidence-capture.ps1` makes repeatable, redacted evidence screenshots from a manifest of named synthetic windows (see [docs/EVIDENCE-CAPTURE.md](docs/EVIDENCE-CAPTURE.md)). Its tests: `tests/redact_ps_test.ps1` (patterns and box drawing, no OCR), `tests/evidence_capture_test.ps1` (end to end with real OCR on synthetic windows; skips without OCR, `-RequireOcr` fails instead) and `python tests/redact_flow_test.py` (the studio's redaction messages).
 - `tests/windows_capture_perf.ps1 -DesktopCapture` verifies pixel-perfect source-bitmap crops and prints native capture and PNG encoding timings on Windows.
@@ -180,6 +183,7 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `python tests/webcam_browser_test.py` runs Chromium's fake camera: the picture lands in the chosen corner, the composite records, the camera is released on stop, a live camera is announced, and a refused camera still records.
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
 - `python tests/mp4_record_test.py` records a synthetic canvas in installed Edge (then Chrome) and checks the bytes are a real MP4 (`ftyp` box) and a real WebM. It skips with a message if no installed browser can write MP4; Playwright's bundled Chromium cannot.
+- `python tests/layers_numeric_test.py` checks the Position and size fields of the selected layer: exact X, Y, width and height (read back from the saved project), one Undo step per edit, refusal of an empty field, clamping to the image, fixed-size layers, and that dragging a rectangle's corner handle resizes it.
 - `python tests/storage_migration_test.py` checks that browser preferences saved under the `cuttermk-*` keys are copied forward to `snapshackle-*` once, with the old keys kept.
 
 Automated Chromium tests **do not** verify the native Windows capture integration or enterprise managed-workstation compatibility. Test on a machine with the correct Windows desktop, PowerShell version, browser, and organization-approved policies.
@@ -198,6 +202,8 @@ modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
 assets/voice.js             Voice notes on annotations (local recording, limits, clean-up)
+modules/Cli.ps1            Command registry (CLI and /api/commands), CLI session token file, audit log
+snapshackle.ps1            Command line (run through SnapShackle-CLI.bat)
 modules/Redact.ps1         Sensitive-text detection and redaction boxes for scripts (mirrors assets/redact.js)
 tools/                     evidence-capture.ps1 and its sample manifest (not needed at runtime)
 modules/Share.ps1          Share destinations: folder copy, clipboard file, Explorer, default app
