@@ -14,6 +14,7 @@ function noteInvalidSession(response){
 }
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}}).then(noteInvalidSession);
 const canvas=$('#canvas');
+let layerFieldsBusy=false;
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
 let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',recordCamera:'off',recordCameraCorner:'br',recordCameraSize:'medium',recordCameraId:'',shareFolders:[],recordFormat:'webm'};
 // Preferences saved under earlier names (CutterMk, Lasso, SnipHero) are copied forward once to
@@ -39,6 +40,7 @@ const editor=new SnapShackleEditor(canvas,(instance)=>{
   $('#dims').textContent=instance.canvas.width+' × '+instance.canvas.height;
   // Pointer movement redraws the canvas frequently. Rebuild layer buttons ONLY when
   // their contents or the selected layer changed, not for every pen/drag frame.
+  refreshLayerFields(instance);
   const signature=instance.selected+'|'+instance.objects.map(o=>o.type+':'+(o.text||'')).join('|');
   if(signature===lastLayersSignature)return;
   lastLayersSignature=signature;
@@ -326,6 +328,31 @@ async function recognize(){
   return {text:found.map(x=>x.rawValue).join('\n'),lines:SnapShackleRedact.fromTextDetector(found),engine:'Browser OCR'};
 }
 $('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
+// Exact position and size for the selected layer, for people who cannot (or would rather not) drag. Each edit is one
+// history step. Steps have a fixed size and text takes its width from the words, so those fields stay off.
+const layerFieldIds=['layerX','layerY','layerW','layerH'];
+function refreshLayerFields(instance,force){
+  const o=instance.selected>=0?instance.objects[instance.selected]:null,b=o?instance.bounds(o):null;
+  const locked={layerW:!o||o.type==='step'||o.type==='text',layerH:!o||o.type==='step'};
+  for(const id of ['layerX','layerY','layerW','layerH']){const el=$('#'+id);if(!el)continue;
+    el.disabled=!o||!!locked[id];
+    if(force||document.activeElement!==el)el.value=b?String(Math.round({layerX:b.x,layerY:b.y,layerW:b.w,layerH:b.h}[id])):''}
+}
+function applyLayerField(id){
+  if(layerFieldsBusy)return;
+  const o=editor.selected>=0?editor.objects[editor.selected]:null,el=$('#'+id);if(!o||!el)return;
+  const wanted=Number(el.value);if(!el.value.trim()||!Number.isFinite(wanted)){refreshLayerFields(editor,true);return notify('Type a number')}
+  const b=editor.bounds(o),before=editor.state(),orig=JSON.parse(JSON.stringify(o));
+  const W=editor.canvas.width,H=editor.canvas.height;
+  if(id==='layerX')editor.translate(o,Math.max(-b.w+1,Math.min(W-1,Math.round(wanted)))-b.x,0);
+  else if(id==='layerY')editor.translate(o,0,Math.max(-b.h+1,Math.min(H-1,Math.round(wanted)))-b.y);
+  else if(id==='layerW')editor.resize(o,orig,'se',{x:b.x+Math.max(2,Math.min(W,Math.round(wanted))),y:b.y+b.h});
+  else editor.resize(o,orig,'se',{x:b.x+b.w,y:b.y+Math.max(2,Math.min(H,Math.round(wanted)))});
+  layerFieldsBusy=true;try{editor.saveHistory(before);editor.render()}finally{layerFieldsBusy=false}
+  refreshLayerFields(editor,true);
+  notify('Layer '+(editor.selected+1)+': '+id.replace('layer','')+' set');
+}
+for(const id of layerFieldIds)$('#'+id).addEventListener('change',()=>applyLayerField(id));
 // Smart redaction: OCR, detect, let the person untick false positives, then cover with solid boxes.
 let redactFindings=[];
 function clampBox(b){return {x:Math.max(0,b.x),y:Math.max(0,b.y),x2:Math.min(canvas.width,b.x2),y2:Math.min(canvas.height,b.y2)}}
