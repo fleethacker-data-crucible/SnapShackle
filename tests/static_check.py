@@ -94,6 +94,9 @@ print('PASS: camera picture-in-picture is off by default, local only, and wired 
 assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
 assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+assert all('id="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')) and all('for="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')), 'numeric layer fields need labels'
+assert "orig.type==='pen'||orig.type==='highlight'" in (ROOT/'assets/editor.js').read_text(encoding='utf-8'), 'only freehand strokes are scaled through points'
+print('PASS: numeric layer fields are labelled and shapes resize through their corners')
 print('PASS: video format (WebM or MP4) is a saved setting, chosen through pickRecorderType')
 evidence=(ROOT/'tools/evidence-capture.ps1').read_text(encoding='utf-8')
 assert 'CopyFromScreen' not in evidence and 'Get-SnapShackleRect' not in evidence and 'Get-SnapShackleWindows' not in evidence, 'evidence capture must only capture windows it draws'
