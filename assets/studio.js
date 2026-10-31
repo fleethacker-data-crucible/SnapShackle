@@ -15,7 +15,7 @@ function noteInvalidSession(response){
 const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,'X-SnapShackle-Token':TOKEN}}).then(noteInvalidSession);
 const canvas=$('#canvas');
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',recordCamera:'off',recordCameraCorner:'br',recordCameraSize:'medium',recordCameraId:''};
+let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',recordCamera:'off',recordCameraCorner:'br',recordCameraSize:'medium',recordCameraId:'',recordFormat:'webm'};
 // Preferences saved under earlier names (CutterMk, Lasso, SnipHero) are copied forward once to
 // 'snapshackle-settings'; the old keys are left in place so an older build still finds them.
 function migrateStorageKey(key,legacyKeys){try{const current=localStorage.getItem(key);if(current!==null)return current;for(const old of legacyKeys){const value=localStorage.getItem(old);if(value!==null){try{localStorage.setItem(key,value)}catch{}return value}}}catch{}return null}
@@ -23,6 +23,7 @@ try {const saved=migrateStorageKey('snapshackle-settings',['cuttermk-settings','
 settings.recordAudio=SnapShackleAudio.normalizeMode(settings.recordAudio);
 settings.recordMicId=SnapShackleAudio.normalizeMicId(settings.recordMicId);
 settings.recordCamera=SnapShackleWebcam.normalizeMode(settings.recordCamera);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);settings.recordCameraSize=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId(settings.recordCameraId);
+settings.recordFormat=SnapShackleAudio.normalizeFormat(settings.recordFormat);
 function notify(message){$('#status').textContent=message}
 function fail(error){console.error('[SnapShackle]',error);notify('⚠ '+(error?.message||error))}
 function sanitizePrefix(s){return (s||'SnapShackle').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'SnapShackle'}
@@ -218,8 +219,8 @@ $('#record').onclick=async()=>{
        }catch(e){cam.stream.getTracks().forEach(t=>t.stop());compositor=null;cameraNote='The camera picture could not be added, so this recording has no camera picture.'}
      }else cameraNote=cam.message;
    }
-   let supported=SnapShackleAudio.mimeCandidates(hasAudio).find(t=>MediaRecorder.isTypeSupported(t));
-   if(!supported)throw Error('WebM recording not supported');
+   let pick=SnapShackleAudio.pickRecorderType(hasAudio,settings.recordFormat,t=>MediaRecorder.isTypeSupported(t)),supported=pick.mime;
+   if(!supported)throw Error('Video recording is not supported in this browser');
    try{recorder=new MediaRecorder(stream,SnapShackleAudio.recorderOptions(supported,hasAudio))}
    catch(error){
      const retry=SnapShackleAudio.onRecorderConstructError(hasAudio);
@@ -228,7 +229,7 @@ $('#record').onclick=async()=>{
      stream=new MediaStream(stream.getVideoTracks());
      audioSession={stream,plan:SnapShackleAudio.videoOnlyPlan(mode,retry.message),cleanup(){}};
      hasAudio=false;
-     supported=SnapShackleAudio.mimeCandidates(false).find(t=>MediaRecorder.isTypeSupported(t));
+     pick=SnapShackleAudio.pickRecorderType(false,settings.recordFormat,t=>MediaRecorder.isTypeSupported(t));supported=pick.mime;
      if(!supported)throw error;
      recorder=new MediaRecorder(stream,SnapShackleAudio.recorderOptions(supported,false));
    }
@@ -236,20 +237,20 @@ $('#record').onclick=async()=>{
    const chunks=[];
    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
    recorder.onstop=()=>{
-     try{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName('webm'))}catch(e){fail(e)}
+     try{if(chunks.length)download(new Blob(chunks,{type:supported}),downloadName(pick.ext))}catch(e){fail(e)}
      try{stream.getTracks().forEach(t=>t.stop())}catch{}
      try{compositor?.stop()}catch{}
      try{baseStream?.getTracks().forEach(t=>t.stop())}catch{}
      try{audioSession?.cleanup()}catch{}
      audioSession=null;recordStream=null;recorder=null;compositor=null;baseStream=null;setRecordAudioLive(null);
      setButton($('#record'),'record','Record video');
-     notify(hasAudio?'WebM recording with sound exported. The file stays on this computer.':'WebM recording exported');
+     notify((hasAudio?pick.ext.toUpperCase()+' recording with sound exported. The file stays on this computer.':pick.ext.toUpperCase()+' recording exported')+(pick.fellBack?' · '+pick.message:''));
    };
    for(const track of baseStream.getVideoTracks())track.onended=()=>{if(recorder?.state==='recording')recorder.stop()};
    recorder.start(1000);
    setButton($('#record'),'stop',hasAudio?'Stop recording (sound on)':'Stop recording',true);
-   if(mode==='off'){setRecordAudioLive(null,!!compositor);notify('Recording: use Stop to export WebM'+(compositor?' · camera picture-in-picture on':'')+(cameraNote?' · '+cameraNote:''))}
-   else{setRecordAudioLive(audioSession.plan,!!compositor);notify((audioSession.plan.message||'Recording with sound. Use Stop to export WebM. Sound stays on this computer.')+(compositor?' · camera picture-in-picture on':'')+(cameraNote?' · '+cameraNote:''))}
+   if(mode==='off'){setRecordAudioLive(null,!!compositor);notify('Recording '+pick.ext.toUpperCase()+': use Stop to export'+(compositor?' · camera picture-in-picture on':'')+(cameraNote?' · '+cameraNote:'')+(pick.fellBack?' · '+pick.message:''))}
+   else{setRecordAudioLive(audioSession.plan,!!compositor);notify((audioSession.plan.message||'Recording with sound. Use Stop to export '+pick.ext.toUpperCase()+'. Sound stays on this computer.')+(compositor?' · camera picture-in-picture on':'')+(cameraNote?' · '+cameraNote:'')+(pick.fellBack?' · '+pick.message:''))}
  }catch(e){
    try{audioSession?.stream?.getTracks().forEach(t=>t.stop())}catch{}
    try{compositor?.stop()}catch{}
@@ -346,13 +347,13 @@ async function refreshMicList(ask){
   try{if(navigator.mediaDevices?.enumerateDevices){const devices=await navigator.mediaDevices.enumerateDevices();mic.replaceChildren(new Option('Default microphone',''));(devices||[]).filter(d=>d.kind==='audioinput'&&d.deviceId).forEach((d,i)=>mic.add(new Option(d.label||('Microphone '+(i+1)),SnapShackleAudio.normalizeMicId(d.deviceId))))}}catch(e){if(!ask)console.warn('[SnapShackle] microphones',e)}
   ensureMicOption(keep);
 }
-function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);ensureMicOption(settings.recordMicId);syncMicRow();$('#recordCamera').value=SnapShackleWebcam.normalizeMode(settings.recordCamera);$('#recordCameraCorner').value=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);$('#recordCameraSize').value=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);ensureCameraOption(settings.recordCameraId);syncCameraRow();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshCameraList(false);refreshMicList(false)}
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);$('#recordFormat').value=SnapShackleAudio.normalizeFormat(settings.recordFormat);ensureMicOption(settings.recordMicId);syncMicRow();$('#recordCamera').value=SnapShackleWebcam.normalizeMode(settings.recordCamera);$('#recordCameraCorner').value=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);$('#recordCameraSize').value=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);ensureCameraOption(settings.recordCameraId);syncCameraRow();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshCameraList(false);refreshMicList(false)}
 // Theme follows Lazarette: dark by default, light on request, or match Windows.
 function applyTheme(choice){const theme=window.SnapShackleTheme?SnapShackleTheme.apply(choice):'dark';const toggle=$('#themeToggle');
   if(toggle){toggle.innerHTML=SnapShackleIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
 $('#themeToggle').onclick=()=>{settings.theme=(window.SnapShackleTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
 $('#theme').onchange=()=>{settings.theme=$('#theme').value;applyTheme(settings.theme)};
-function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId),recordCamera:SnapShackleWebcam.normalizeMode(saved.recordCamera!=null?saved.recordCamera:settings.recordCamera),recordCameraCorner:SnapShackleWebcam.normalizeCorner(saved.recordCameraCorner!=null?saved.recordCameraCorner:settings.recordCameraCorner),recordCameraSize:SnapShackleWebcam.normalizeSize(saved.recordCameraSize!=null?saved.recordCameraSize:settings.recordCameraSize),recordCameraId:SnapShackleWebcam.normalizeCameraId(saved.recordCameraId!=null?saved.recordCameraId:settings.recordCameraId)}}
+function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId),recordCamera:SnapShackleWebcam.normalizeMode(saved.recordCamera!=null?saved.recordCamera:settings.recordCamera),recordCameraCorner:SnapShackleWebcam.normalizeCorner(saved.recordCameraCorner!=null?saved.recordCameraCorner:settings.recordCameraCorner),recordCameraSize:SnapShackleWebcam.normalizeSize(saved.recordCameraSize!=null?saved.recordCameraSize:settings.recordCameraSize),recordCameraId:SnapShackleWebcam.normalizeCameraId(saved.recordCameraId!=null?saved.recordCameraId:settings.recordCameraId),recordFormat:SnapShackleAudio.normalizeFormat(saved.recordFormat!=null?saved.recordFormat:settings.recordFormat)}}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
 async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();

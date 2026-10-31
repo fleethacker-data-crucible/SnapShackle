@@ -6,6 +6,11 @@
 const MODES = ['off', 'system', 'mic', 'both'];
 const VIDEO_ONLY_MIME = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
 const WITH_AUDIO_MIME = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+// MP4 is H.264 (with AAC or Opus) written by the browser's own encoder. Edge and recent Chrome offer it;
+// where MediaRecorder cannot, recording falls back to WebM and says so. Nothing is converted or shipped.
+const MP4_VIDEO_ONLY_MIME = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4;codecs=avc3', 'video/mp4'];
+const MP4_WITH_AUDIO_MIME = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,opus', 'video/mp4;codecs=avc1,opus', 'video/mp4;codecs=avc3,mp4a.40.2'];
+const FORMATS = ['webm', 'mp4'];
 const closedContexts = new WeakSet();
 
 function normalizeMode(value) {
@@ -31,13 +36,34 @@ function isUnknownConstraint(error) {
   const name = errorName(error);
   return name === 'TypeError' || name === 'NotSupportedError';
 }
-function mimeCandidates(hasAudio) { return (hasAudio ? WITH_AUDIO_MIME : VIDEO_ONLY_MIME).slice(); }
+function normalizeFormat(value) {
+  const format = String(value == null ? '' : value).trim().toLowerCase();
+  return FORMATS.indexOf(format) === -1 ? 'webm' : format;
+}
+function mimeCandidates(hasAudio, format) {
+  if (normalizeFormat(format) === 'mp4') return (hasAudio ? MP4_WITH_AUDIO_MIME : MP4_VIDEO_ONLY_MIME).slice();
+  return (hasAudio ? WITH_AUDIO_MIME : VIDEO_ONLY_MIME).slice();
+}
+function extensionFor(mimeType) { return /^video\/mp4/i.test(String(mimeType || '')) ? 'mp4' : 'webm'; }
+// Chooses what MediaRecorder will write. A wanted MP4 that the browser cannot write falls back to WebM
+// (and says so); with no supported type at all, mime is null and the caller reports it.
+function pickRecorderType(hasAudio, format, isTypeSupported) {
+  const wanted = normalizeFormat(format);
+  const supports = function (type) { try { return !!isTypeSupported(type); } catch (e) { return false; } };
+  const first = mimeCandidates(hasAudio, wanted).filter(supports)[0] || null;
+  if (first) return { mime: first, ext: extensionFor(first), format: wanted, fellBack: false, message: null };
+  if (wanted === 'mp4') {
+    const webm = mimeCandidates(hasAudio, 'webm').filter(supports)[0] || null;
+    if (webm) return { mime: webm, ext: 'webm', format: 'webm', fellBack: true, message: 'This browser cannot write MP4 here, so this recording is WebM.' };
+  }
+  return { mime: null, ext: null, format: wanted, fellBack: false, message: null };
+}
 function recorderOptions(mimeType, hasAudio) {
   return hasAudio ? { mimeType: mimeType, audioBitsPerSecond: 128000 } : { mimeType: mimeType };
 }
 function onRecorderConstructError(hasAudio) {
   if (!hasAudio) return { retryVideoOnly: false, message: null };
-  return { retryVideoOnly: true, message: 'Sound could not be added to the WebM file. This recording is video only.' };
+  return { retryVideoOnly: true, message: 'Sound could not be added to the video file. This recording is video only.' };
 }
 function displayAttempts(mode, fps) {
   const video = { frameRate: fps };
@@ -283,6 +309,10 @@ window.SnapShackleAudio = {
   wantsSystem: wantsSystem,
   wantsMic: wantsMic,
   isDecline: isDecline,
+  FORMATS: FORMATS.slice(),
+  normalizeFormat: normalizeFormat,
+  extensionFor: extensionFor,
+  pickRecorderType: pickRecorderType,
   mimeCandidates: mimeCandidates,
   recorderOptions: recorderOptions,
   onRecorderConstructError: onRecorderConstructError,

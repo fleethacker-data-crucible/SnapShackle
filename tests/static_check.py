@@ -85,6 +85,10 @@ assert 'webcam' in host.split('/assets/(')[1].split(')')[0], 'webcam.js must be 
 assert 'http://' not in (ROOT/'assets/webcam.js').read_text(encoding='utf-8') and 'fetch(' not in (ROOT/'assets/webcam.js').read_text(encoding='utf-8')
 assert 'SnapShackleWebcam.createCompositor' in studio and "getUserMedia({video" not in studio.replace("getUserMedia(c)", ''), 'camera is requested only through SnapShackleWebcam'
 print('PASS: camera picture-in-picture is off by default, local only, and wired through SnapShackleWebcam')
+assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
+assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
+assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+print('PASS: video format (WebM or MP4) is a saved setting, chosen through pickRecorderType')
 print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must
