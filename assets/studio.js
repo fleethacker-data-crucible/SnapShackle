@@ -16,14 +16,14 @@ const api=(path,options={})=>fetch(path,{...options,headers:{...options.headers,
 const canvas=$('#canvas');
 let layerFieldsBusy=false;
 let librarySelection=null,recorder=null,recordStream=null,gifInterval=null,gifFrames=[],gifCanvas=null,stitchTiles=[],listURLs=[],scrollInterval=null,scrollStream=null,scrollVideo=null,scrollPrevious=null;
-let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',recordCamera:'off',recordCameraCorner:'br',recordCameraSize:'medium',recordCameraId:'',shareFolders:[],recordFormat:'webm'};
+let settings={namePrefix:'SnapShackle',autoLibrary:false,recordFps:6,stayInTray:false,theme:(window.SnapShackleTheme?.choice)||'dark',recordAudio:'off',recordMicId:'',recordCamera:'off',recordCameraCorner:'br',recordCameraSize:'medium',recordCameraId:'',shareFolders:[],recordFormat:'webm',aiSuggest:'off',aiPrivacy:'local'};
 // Preferences saved under earlier names (CutterMk, Lasso, SnipHero) are copied forward once to
 // 'snapshackle-settings'; the old keys are left in place so an older build still finds them.
 function migrateStorageKey(key,legacyKeys){try{const current=localStorage.getItem(key);if(current!==null)return current;for(const old of legacyKeys){const value=localStorage.getItem(old);if(value!==null){try{localStorage.setItem(key,value)}catch{}return value}}}catch{}return null}
 try {const saved=migrateStorageKey('snapshackle-settings',['cuttermk-settings','lasso-settings','sniphero-settings']);settings={...settings,...JSON.parse(saved||'{}')};if(['CutterMk','SnipHero','Lasso'].includes(settings.namePrefix))settings.namePrefix='SnapShackle'}catch{}
 settings.recordAudio=SnapShackleAudio.normalizeMode(settings.recordAudio);
 settings.recordMicId=SnapShackleAudio.normalizeMicId(settings.recordMicId);
-settings.shareFolders=Array.isArray(settings.shareFolders)?settings.shareFolders:[];
+settings.shareFolders=Array.isArray(settings.shareFolders)?settings.shareFolders:[];settings.aiSuggest=settings.aiSuggest==='on'?'on':'off';settings.aiPrivacy=settings.aiPrivacy==='any'?'any':'local';
 settings.recordCamera=SnapShackleWebcam.normalizeMode(settings.recordCamera);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);settings.recordCameraSize=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId(settings.recordCameraId);
 settings.recordFormat=SnapShackleAudio.normalizeFormat(settings.recordFormat);
 function notify(message){$('#status').textContent=message}
@@ -328,6 +328,36 @@ async function recognize(){
   return {text:found.map(x=>x.rawValue).join('\n'),lines:SnapShackleRedact.fromTextDetector(found),engine:'Browser OCR'};
 }
 $('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
+// Optional AI help through the Fleet router. The host makes the call, so the router key never reaches this page.
+let aiSuggestions=[];
+async function refreshAiStatus(){
+  try{const s=await (await api('/api/ai/status')).json();
+    $('#aiStatus').textContent=!s.enabled?'Off. Turn it on under Settings, then save.':'On. Router '+s.routerUrl+(s.keySource==='none'?' (no key found: the router must let this computer in without one)':' (key from '+(s.keySource==='vault'?'the vault':'the environment')+')')+(s.privacy==='local'?', local models only.':'.')+(s.problem?' '+s.problem:'');
+    $('#aiAltText').disabled=$('#aiSuggestBtn').disabled=!s.enabled}catch{}
+}
+async function aiCall(path){
+  const blob=await editor.export(),response=await api(path,{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(data.error||'AI help failed');
+  return data;
+}
+$('#aiAltText').onclick=async()=>{try{notify('Asking the router…');const r=await aiCall('/api/ai/alt-text');$('#aiAlt').value=r.text;notify('Alt text ready'+(r.target?' ('+r.target+')':'')+'. Read it before you use it.')}catch(e){fail(e)}};
+$('#aiAltCopy').onclick=async()=>{try{if(!$('#aiAlt').value)return notify('Describe the image first');await navigator.clipboard.writeText($('#aiAlt').value);notify('Alt text copied')}catch(e){fail(e)}};
+$('#aiAltNote').onclick=()=>{if(!$('#aiAlt').value)return notify('Describe the image first');$('#note').value=$('#aiAlt').value;notify('Alt text is in the note field. Save the tags and note to keep it.')};
+function renderAiSuggestions(){
+  const root=$('#aiSuggestions');root.replaceChildren();
+  if(!aiSuggestions.length){root.textContent='No usable suggestions. You can still annotate by hand.';$('#aiApply').hidden=true;return}
+  aiSuggestions.forEach((s,i)=>{const row=document.createElement('label');row.className='redact-row';const box=document.createElement('input');box.type='checkbox';box.checked=true;box.dataset.index=i;
+    const text=document.createElement('span');text.textContent=SnapShackleAiSuggest.describe(s);row.append(box,text);root.append(row)});
+  $('#aiApply').hidden=false;$('#aiApply').textContent=`Add ${aiSuggestions.length} checked`;
+}
+$('#aiSuggestBtn').onclick=async()=>{try{notify('Asking the router…');const r=await aiCall('/api/ai/suggest');aiSuggestions=(r.suggestions||[]).filter(SnapShackleAiSuggest.usable);renderAiSuggestions();
+  notify(aiSuggestions.length?`${aiSuggestions.length} suggestion(s)${r.target?' from '+r.target:''}. Nothing is added until you press Add checked.`:'The router had no usable suggestions')}catch(e){fail(e)}};
+$('#aiSuggestions').onchange=()=>{const n=[...$('#aiSuggestions').querySelectorAll('input:checked')].length;$('#aiApply').textContent=`Add ${n} checked`};
+$('#aiApply').onclick=()=>{const picked=[...$('#aiSuggestions').querySelectorAll('input:checked')].map(x=>aiSuggestions[+x.dataset.index]);
+  const objects=SnapShackleAiSuggest.toObjects(picked,canvas.width,canvas.height,editor.counter||1);
+  const n=editor.addObjects(objects);editor.counter=(editor.counter||1)+objects.filter(o=>o.type==='step').length;
+  aiSuggestions=[];$('#aiSuggestions').replaceChildren();$('#aiApply').hidden=true;notify(n?`Added ${n} annotation(s). Undo removes them together.`:'Nothing checked')};
 // Exact position and size for the selected layer, for people who cannot (or would rather not) drag. Each edit is one
 // history step. Steps have a fixed size and text takes its width from the words, so those fields stay off.
 const layerFieldIds=['layerX','layerY','layerW','layerH'];
@@ -395,13 +425,13 @@ async function refreshMicList(ask){
   try{if(navigator.mediaDevices?.enumerateDevices){const devices=await navigator.mediaDevices.enumerateDevices();mic.replaceChildren(new Option('Default microphone',''));(devices||[]).filter(d=>d.kind==='audioinput'&&d.deviceId).forEach((d,i)=>mic.add(new Option(d.label||('Microphone '+(i+1)),SnapShackleAudio.normalizeMicId(d.deviceId))))}}catch(e){if(!ask)console.warn('[SnapShackle] microphones',e)}
   ensureMicOption(keep);
 }
-function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);$('#recordFormat').value=SnapShackleAudio.normalizeFormat(settings.recordFormat);ensureMicOption(settings.recordMicId);syncMicRow();$('#recordCamera').value=SnapShackleWebcam.normalizeMode(settings.recordCamera);$('#recordCameraCorner').value=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);$('#recordCameraSize').value=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);ensureCameraOption(settings.recordCameraId);syncCameraRow();$('#shareFolders').value=formatShareFolders(settings.shareFolders);refreshShare();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshCameraList(false);refreshMicList(false)}
+function showSettings(){$('#prefix').value=settings.namePrefix;$('#autoLibrary').checked=settings.autoLibrary;$('#fps').value=settings.recordFps;$('#stayInTray').checked=!!settings.stayInTray;$('#recordAudio').value=SnapShackleAudio.normalizeMode(settings.recordAudio);$('#recordFormat').value=SnapShackleAudio.normalizeFormat(settings.recordFormat);$('#aiSuggest').value=settings.aiSuggest;$('#aiPrivacy').value=settings.aiPrivacy;refreshAiStatus();ensureMicOption(settings.recordMicId);syncMicRow();$('#recordCamera').value=SnapShackleWebcam.normalizeMode(settings.recordCamera);$('#recordCameraCorner').value=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);$('#recordCameraSize').value=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);ensureCameraOption(settings.recordCameraId);syncCameraRow();$('#shareFolders').value=formatShareFolders(settings.shareFolders);refreshShare();$('#theme').value=settings.theme;applyTheme(settings.theme);refreshCameraList(false);refreshMicList(false)}
 // Theme follows Lazarette: dark by default, light on request, or match Windows.
 function applyTheme(choice){const theme=window.SnapShackleTheme?SnapShackleTheme.apply(choice):'dark';const toggle=$('#themeToggle');
   if(toggle){toggle.innerHTML=SnapShackleIcons.icon(theme==='light'?'moon':'sun');const next=theme==='light'?'dark':'light';toggle.title=toggle.ariaLabel='Switch to '+next+' theme'}}
 $('#themeToggle').onclick=()=>{settings.theme=(window.SnapShackleTheme?.theme==='light')?'dark':'light';showSettings();saveSettings(false).catch(fail)};
 $('#theme').onchange=()=>{settings.theme=$('#theme').value;applyTheme(settings.theme)};
-function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId),recordCamera:SnapShackleWebcam.normalizeMode(saved.recordCamera!=null?saved.recordCamera:settings.recordCamera),recordCameraCorner:SnapShackleWebcam.normalizeCorner(saved.recordCameraCorner!=null?saved.recordCameraCorner:settings.recordCameraCorner),recordCameraSize:SnapShackleWebcam.normalizeSize(saved.recordCameraSize!=null?saved.recordCameraSize:settings.recordCameraSize),recordCameraId:SnapShackleWebcam.normalizeCameraId(saved.recordCameraId!=null?saved.recordCameraId:settings.recordCameraId),shareFolders:Array.isArray(saved.shareFolders)?saved.shareFolders:settings.shareFolders,recordFormat:SnapShackleAudio.normalizeFormat(saved.recordFormat!=null?saved.recordFormat:settings.recordFormat)}}
+function fromHost(saved){return {...settings,namePrefix:saved.namePrefix,autoLibrary:!!saved.autoLibrary,recordFps:saved.recordFps,stayInTray:!!saved.stayInTray,theme:saved.theme||settings.theme,recordAudio:SnapShackleAudio.normalizeMode(saved.recordAudio!=null?saved.recordAudio:settings.recordAudio),recordMicId:SnapShackleAudio.normalizeMicId(saved.recordMicId!=null?saved.recordMicId:settings.recordMicId),recordCamera:SnapShackleWebcam.normalizeMode(saved.recordCamera!=null?saved.recordCamera:settings.recordCamera),recordCameraCorner:SnapShackleWebcam.normalizeCorner(saved.recordCameraCorner!=null?saved.recordCameraCorner:settings.recordCameraCorner),recordCameraSize:SnapShackleWebcam.normalizeSize(saved.recordCameraSize!=null?saved.recordCameraSize:settings.recordCameraSize),recordCameraId:SnapShackleWebcam.normalizeCameraId(saved.recordCameraId!=null?saved.recordCameraId:settings.recordCameraId),shareFolders:Array.isArray(saved.shareFolders)?saved.shareFolders:settings.shareFolders,recordFormat:SnapShackleAudio.normalizeFormat(saved.recordFormat!=null?saved.recordFormat:settings.recordFormat),aiSuggest:saved.aiSuggest==='on'?'on':'off',aiPrivacy:saved.aiPrivacy==='any'?'any':'local'}}
 // Settings are kept by the host (a port change would give the browser a new, empty storage origin).
 async function loadSettings(){
   try{const r=await api('/api/settings');if(!r.ok)return;const saved=await r.json();
@@ -419,7 +449,7 @@ $('#recordAudio').onchange=syncMicRow;
 $('#recordCamera').onchange=syncCameraRow;
 $('#recordCameraRefresh').onclick=()=>refreshCameraList(true).catch(fail);
 $('#recordMicRefresh').onclick=()=>refreshMicList(true).catch(fail);
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.recordAudio=SnapShackleAudio.normalizeMode($('#recordAudio').value);settings.recordMicId=SnapShackleAudio.normalizeMicId($('#recordMic').value);settings.recordCamera=SnapShackleWebcam.normalizeMode($('#recordCamera').value);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner($('#recordCameraCorner').value);settings.recordCameraSize=SnapShackleWebcam.normalizeSize($('#recordCameraSize').value);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId($('#recordCameraId').value);settings.shareFolders=parseShareFolders($('#shareFolders').value);settings.theme=$('#theme').value;saveSettings().catch(fail)};
+$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.recordAudio=SnapShackleAudio.normalizeMode($('#recordAudio').value);settings.recordMicId=SnapShackleAudio.normalizeMicId($('#recordMic').value);settings.recordCamera=SnapShackleWebcam.normalizeMode($('#recordCamera').value);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner($('#recordCameraCorner').value);settings.recordCameraSize=SnapShackleWebcam.normalizeSize($('#recordCameraSize').value);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId($('#recordCameraId').value);settings.shareFolders=parseShareFolders($('#shareFolders').value);settings.recordFormat=SnapShackleAudio.normalizeFormat($('#recordFormat').value);settings.aiSuggest=$('#aiSuggest').value==='on'?'on':'off';settings.aiPrivacy=$('#aiPrivacy').value==='any'?'any':'local';settings.theme=$('#theme').value;saveSettings().catch(fail)};
 showSettings();
 document.addEventListener('keydown',event=>{
   const target=event.target instanceof Element?event.target:document.activeElement;

@@ -129,6 +129,7 @@ After a capture, the bottom status bar and **Workflows → Diagnostics** show a 
 | Area | What works | Caveats |
 |---|---|---|
 | Hand-off to other Fleet apps | `tools\handoff.ps1` lists captures (filter by text, tag, date, name) or copies them with their sidecars to a folder with a `handoff.json` manifest (hashes, tags, note, optional OCR text) for Bowerbird, Capstan and Scrimshaw. See [docs/HANDOFF.md](docs/HANDOFF.md) | Reads the folder directly; never overwrites in the output folder; lists at most 250 captures. The receiving apps' side is theirs |
+| AI help (opt-in) | Off until chosen under Workflows, Settings. **Describe image** writes alt text; **Suggest annotations** lists covers, boxes, arrows, steps and captions you tick before anything is added (one undo removes them). The host asks the Fleet router (Fairlead, `127.0.0.1:8776`, override `SNAPSHACKLE_AI_ENDPOINT_URL`) and asks for local models only unless you choose otherwise. The router key is read from the Lazarette item `snapshackle-router-key` (override `SNAPSHACKLE_LAZARETTE_ITEM_Router`) or `SNAPSHACKLE_ROUTER_KEY` and is never saved or shown. See [docs/AI-HELP.md](docs/AI-HELP.md) | Only a loopback router address is accepted. Reading the vault needs Lazarette already unlocked in the process that starts SnapShackle; otherwise a launcher sets the environment variable. Suggestions are a model's guess: check each one. Tested against a fake router, not a live one |
 | Desktop screenshot | Entire desktop, selected monitor, selected visible window, native drag-to-select region | Standard `CopyFromScreen`; not minimized/occluded windows or DRM-protected content |
 | Browser screenshot | Browser screen/window/tab capture after user permission | Browser support and permission required |
 | Editor | Arrows, boxes, ellipses, lines, pen, highlighter, text, numbered steps, opaque redaction, pixelate, blur; layer reordering; drag and corner resizing; object duplication/deletion | Some object transforms remain simplified; complex multi-object grouping not available |
@@ -179,6 +180,8 @@ Only development/testing requires Python, Pillow, Chromium/Playwright or Node. *
 - `powershell -NoProfile -STA -File tests/share_api_test.ps1` starts a real host (no tray, no browser, temporary data folder, free port) and checks the share routes over HTTP with a synthetic PNG: token required, folder copy without overwrite, bad requests refused.
 - `python tests/share_ui_test.py` checks the share controls against a mocked API.
 - `powershell -NoProfile -File tests/handoff_test.ps1` checks the hand-off helper on a synthetic capture folder: list and filters, export with matching hashes, no overwrite, dry run, and the exit codes.
+- `powershell -NoProfile -STA -File tests/ai_router_test.ps1` runs the AI help against a fake router (`tests/fake_router.ps1`): loopback-only address, key lookup (environment, then the vault item), cleaned suggestions, a refused key, and a real host that sends the right headers and image and never shows, saves or logs the key.
+- `node tests/aisuggest_test.js` and `python tests/ai_ui_test.py` check how suggestions become annotations and that the panel is off by default and adds nothing until accepted.
 - `node tests/webcam_test.js` checks the camera options, picture-in-picture layout in every corner and size, and that a refused camera never throws.
 - `python tests/webcam_browser_test.py` runs Chromium's fake camera: the picture lands in the chosen corner, the composite records, the camera is released on stop, a live camera is announced, and a refused camera still records.
 - `node tests/audio_test.js` checks the record-sound choices, the video-only fallback when Share audio or the microphone is unavailable, and the WebM/MP4 choice with its fallback.
@@ -201,6 +204,7 @@ modules/Native.ps1         Windows Forms region overlay and Win32 enumeration
 modules/Ocr.ps1            Optional Windows 10+ OCR bridge
 modules/Migration.ps1      One-time copy of CutterMk data (and move of Lasso / SnipHero data) into SnapShackle
 modules/Library.ps1        Capture naming and saving, shared by the host and the tray
+modules/Router.ps1         Optional AI help: Fleet router client, key lookup, suggestion clean-up (off by default)
 modules/Cli.ps1            Command registry (CLI and /api/commands), CLI session token file, audit log
 snapshackle.ps1            Command line (run through SnapShackle-CLI.bat)
 modules/Redact.ps1         Sensitive-text detection and redaction boxes for scripts (mirrors assets/redact.js)
