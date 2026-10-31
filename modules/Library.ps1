@@ -76,8 +76,10 @@ function Get-SnapShackleCaptureList([string]$Library, [string]$Query, [string]$P
 # recordCameraSize: small|medium|large, recordCameraId: optional camera device id. Off leaves video as before.
 # recordFormat: webm | mp4. MP4 only where the browser's MediaRecorder can write it; otherwise the recording is WebM.
 # shareFolders: up to 8 { name, path } folders the Share button can copy a capture into (see Share.ps1).
+# aiSuggest: off | on. Alt text and annotation suggestions through the Fleet router (Router.ps1); off until chosen.
+# aiPrivacy: local | any. local sends X-Fairlead-Privacy: local so the router keeps the image on local models.
 # recordMicId: optional microphone device id chosen in the studio. Empty uses the browser default.
-$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; recordCamera = 'off'; recordCameraCorner = 'br'; recordCameraSize = 'medium'; recordCameraId = ''; recordFormat = 'webm'; shareFolders = @() }
+$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; recordCamera = 'off'; recordCameraCorner = 'br'; recordCameraSize = 'medium'; recordCameraId = ''; recordFormat = 'webm'; shareFolders = @(); aiSuggest = 'off'; aiPrivacy = 'local' }
 function Get-SnapShackleSettings([string]$Path) {
     $settings = [ordered]@{}
     foreach ($key in $script:SnapShackleSettingDefaults.Keys) { $settings[$key] = $script:SnapShackleSettingDefaults[$key] }
@@ -116,6 +118,14 @@ function ConvertTo-SnapShackleSettings($Value) {
     if ($names -contains 'recordAudio') {
         $audio = ([string]$Value.recordAudio).Trim().ToLowerInvariant()
         if ($audio -in @('off', 'system', 'mic', 'both')) { $clean.recordAudio = $audio }
+    }
+    if ($names -contains 'aiSuggest') {
+        $ai = ([string]$Value.aiSuggest).Trim().ToLowerInvariant()
+        if ($ai -in @('off', 'on')) { $clean.aiSuggest = $ai }
+    }
+    if ($names -contains 'aiPrivacy') {
+        $privacy = ([string]$Value.aiPrivacy).Trim().ToLowerInvariant()
+        if ($privacy -in @('local', 'any')) { $clean.aiPrivacy = $privacy }
     }
     if ($names -contains 'recordCamera') {
         $camera = ([string]$Value.recordCamera).Trim().ToLowerInvariant()

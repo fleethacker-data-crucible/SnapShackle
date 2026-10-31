@@ -28,6 +28,9 @@ SnapShackle-CLI.bat <noun> <verb> [--option value ...] [--json] [--out <file>] [
 | `library delete` | Delete a capture. **Needs `--yes`**, logged. | `--name` (required) |
 | `share list` | Where a capture can be shared: the share folders, clipboard, Explorer, default app. | |
 | `share send` | Share a saved capture: copy into a share folder (never overwrites), file on the clipboard, show in Explorer, or open in the default app. Local only. | `--capture`, `--kind folder\|clipboard\|reveal\|open` (both required), `--destination` (folder name) |
+| `ai status` | AI help state: on or off, router address, key source (never the key), privacy. | |
+| `ai describe` | Alt text for a PNG through the Fleet router; needs `aiSuggest` on (see `docs/AI-HELP.md`). | `--file` (required) |
+| `ai suggest` | Annotation suggestions for a PNG (positions as fractions of the image); needs `aiSuggest` on. | `--file` (required) |
 | `settings show` | The saved preferences. | |
 | `settings set` | Change preferences: `--key` with `--value`, or `--file` of JSON. Unknown keys are ignored. | |
 | `session stop` | Stop SnapShackle, its tray and hotkeys. **Needs `--yes`**, logged. | |
