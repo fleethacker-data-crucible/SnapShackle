@@ -222,6 +222,30 @@ function namedError(name) { const error = Error(name); error.name = name; return
   assertEqual(unsupported.plan.message, 'This browser did not offer Share audio. This recording has the microphone only.');
   assertEqual(unsupported.plan.liveText, 'Recording with sound: microphone');
 
+  // File format: WebM by default; MP4 only when the browser can write it, otherwise WebM with a message.
+  assertEqual(audio.normalizeFormat('MP4'), 'mp4');
+  assertEqual(audio.normalizeFormat('avi'), 'webm');
+  assertEqual(audio.normalizeFormat(undefined), 'webm');
+  assertEqual(audio.extensionFor('video/mp4;codecs=avc1.42E01E'), 'mp4');
+  assertEqual(audio.extensionFor('video/webm;codecs=vp9'), 'webm');
+  assert(audio.mimeCandidates(false, 'mp4').every(t => /^video\/mp4/.test(t)), 'mp4 candidates are all mp4');
+  assert(audio.mimeCandidates(true).every(t => /^video\/webm/.test(t)), 'default candidates stay WebM');
+  const onlyWebm = type => /^video\/webm/.test(type);
+  const anyMp4 = type => /^video\/mp4/.test(type);
+  let picked = audio.pickRecorderType(false, 'mp4', anyMp4);
+  assertEqual([picked.ext, picked.fellBack, picked.message], ['mp4', false, null]);
+  picked = audio.pickRecorderType(true, 'mp4', anyMp4);
+  assert(/mp4a\.40\.2|opus/.test(picked.mime), 'audio MP4 asks for an audio codec: ' + picked.mime);
+  picked = audio.pickRecorderType(false, 'mp4', onlyWebm);
+  assertEqual([picked.ext, picked.fellBack], ['webm', true]);
+  assert(/WebM/.test(picked.message), 'fallback says the recording is WebM');
+  picked = audio.pickRecorderType(false, 'webm', onlyWebm);
+  assertEqual([picked.ext, picked.fellBack, picked.message], ['webm', false, null]);
+  picked = audio.pickRecorderType(false, 'mp4', () => false);
+  assertEqual(picked.mime, null);
+  picked = audio.pickRecorderType(false, 'mp4', () => { throw Error('isTypeSupported blew up'); });
+  assertEqual(picked.mime, null);
+
   const source = fs.readFileSync(__dirname + '/../assets/audio.js', 'utf8');
   assert(!/https?:\/\//.test(source), 'audio module must not reference a network URL');
   assert(!/\.mil\b/.test(source), 'audio module must not reference a .mil host');

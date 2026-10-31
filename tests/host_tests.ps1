@@ -329,6 +329,24 @@ Test-Case 'Record sound is off by default and invalid audio settings are ignored
         $null = Set-SnapShackleSettings $path @{ recordAudio = 'off'; recordMicId = '' }
         $back = Get-SnapShackleSettings $path
         Assert-True ($back.recordAudio -eq 'off' -and $back.recordMicId -eq '') 'sound could not be turned back off'
+        Assert-True ($back.recordCamera -eq 'off' -and $back.recordCameraCorner -eq 'br' -and $back.recordCameraSize -eq 'medium' -and $back.recordCameraId -eq '') 'camera must default to off'
+        $null = Set-SnapShackleSettings $path @{ recordCamera = 'ON'; recordCameraCorner = 'TL'; recordCameraSize = 'Large'; recordCameraId = 'cam_1' }
+        $cam = Get-SnapShackleSettings $path
+        Assert-True ($cam.recordCamera -eq 'on' -and $cam.recordCameraCorner -eq 'tl' -and $cam.recordCameraSize -eq 'large' -and $cam.recordCameraId -eq 'cam_1') "camera choice not saved: $($cam | ConvertTo-Json -Compress)"
+        $null = Set-SnapShackleSettings $path @{ recordCamera = 'always'; recordCameraCorner = 'middle'; recordCameraSize = 'huge'; recordCameraId = 'bad id <cam>' }
+        $cam = Get-SnapShackleSettings $path
+        Assert-True ($cam.recordCamera -eq 'on' -and $cam.recordCameraCorner -eq 'tl' -and $cam.recordCameraSize -eq 'large') 'invalid camera values replaced a saved choice'
+        Assert-True ($cam.recordCameraId -eq 'badidcam') "camera id not sanitised: $($cam.recordCameraId)"
+        $null = Set-SnapShackleSettings $path @{ recordFps = 5 }
+        Assert-True ((Get-SnapShackleSettings $path).recordCamera -eq 'on') 'partial update dropped the camera choice'
+        $null = Set-SnapShackleSettings $path @{ recordCamera = 'off'; recordCameraId = '' }
+        Assert-True ($back.recordFormat -eq 'webm') 'video format should default to webm'
+        $null = Set-SnapShackleSettings $path @{ recordFormat = 'MP4' }
+        Assert-True ((Get-SnapShackleSettings $path).recordFormat -eq 'mp4') 'mp4 choice was not saved'
+        $null = Set-SnapShackleSettings $path @{ recordFormat = 'avi' }
+        Assert-True ((Get-SnapShackleSettings $path).recordFormat -eq 'mp4') 'invalid format replaced a saved choice'
+        $null = Set-SnapShackleSettings $path @{ recordFps = 4 }
+        Assert-True ((Get-SnapShackleSettings $path).recordFormat -eq 'mp4') 'partial update dropped the format'
     } finally { [IO.Directory]::Delete($base, $true) }
 }
 

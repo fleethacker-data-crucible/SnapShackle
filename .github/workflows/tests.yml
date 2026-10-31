@@ -29,6 +29,8 @@ jobs:
           Get-ChildItem assets\*.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE) { exit 1 } }
           node tests/audio_test.js
           if ($LASTEXITCODE) { exit 1 }
+          node tests/webcam_test.js
+          if ($LASTEXITCODE) { exit 1 }
       - name: Loopback port fallback (real Windows sockets)
         shell: powershell
         run: |
