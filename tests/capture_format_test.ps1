@@ -48,9 +48,10 @@ $psi.EnvironmentVariables['LOCALAPPDATA'] = $appData
 $psi.EnvironmentVariables['SNAPSHACKLE_AUTO_STOP'] = '0'
 $proc = [Diagnostics.Process]::Start($psi)
 $base = "http://127.0.0.1:$port"
-function Invoke-Api([string]$Method, [string]$Path, $Body, [string]$Token, [byte[]]$Bytes, [string]$ContentType = 'application/json') {
+function Invoke-Api([string]$Method, [string]$Path, $Body, [string]$Token, [byte[]]$Bytes, [string]$ContentType = 'application/json', [hashtable]$Headers = @{}) {
     $req = [Net.HttpWebRequest]::Create($base + $Path); $req.Method = $Method; $req.Proxy = $null; $req.Timeout = 15000; $req.KeepAlive = $false; $req.ServicePoint.Expect100Continue = $false
     if ($Token) { $req.Headers.Add('X-SnapShackle-Token', $Token) }
+    foreach ($k in $Headers.Keys) { $req.Headers.Add($k, $Headers[$k]) }
     if ($null -ne $Body -or $null -ne $Bytes) {
         if ($null -eq $Bytes) { $Bytes = [Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Depth 6 -Compress)) }
         $req.ContentType = $ContentType; $req.ContentLength = $Bytes.Length
@@ -141,7 +142,7 @@ try {
         Assert-True (@($side.tags).Count -eq $spec.fields.tags.maxItems -and $side.note.Length -eq $spec.fields.note.maxLength) 'limits were not applied'
     }
     Test-Case 'deleting a capture removes the PNG and its sidecar' {
-        $d = Invoke-Api 'DELETE' ('/api/library/' + $script:name) $null $token
+        $d = Invoke-Api 'DELETE' ('/api/library/' + $script:name) $null $token $null 'application/json' @{ 'X-SnapShackle-Confirm' = 'yes' }
         Assert-True ($d.Status -eq 200) ('delete failed: ' + $d.Text)
         Assert-True (-not [IO.File]::Exists((Join-Path $libDir $script:name)) -and -not [IO.File]::Exists((Join-Path $libDir ($script:name + '.meta.json')))) 'a file was left behind'
     }
