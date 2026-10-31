@@ -189,7 +189,7 @@ input[type='range'] { accent-color: var(--color-primary); cursor: pointer; }
 }
 .record-audio-live.is-audible { border-color: var(--color-warning); }
 .record-audio-live.is-silent { border-color: var(--color-border-strong); }
-#recordMicRefresh { margin-top: 8px; }
+#recordMicRefresh, #recordCameraRefresh { margin-top: 8px; }
 .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .tool {
   position: relative; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px;
