@@ -94,6 +94,9 @@ print('PASS: camera picture-in-picture is off by default, local only, and wired 
 assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
 assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+assert 'id="layerAnnounce"' in ui and 'aria-live="polite"' in ui.split('id="layerAnnounce"')[1].split('>')[0] and 'role="group" aria-label="Layers"' in ui
+assert "setAttribute('aria-pressed'" in studio and 'focusedLayer' in studio, 'layer buttons must expose their selected state and keep focus'
+print('PASS: layer buttons expose their selected state, announce it and keep focus')
 print('PASS: video format (WebM or MP4) is a saved setting, chosen through pickRecorderType')
 evidence=(ROOT/'tools/evidence-capture.ps1').read_text(encoding='utf-8')
 assert 'CopyFromScreen' not in evidence and 'Get-SnapShackleRect' not in evidence and 'Get-SnapShackleWindows' not in evidence, 'evidence capture must only capture windows it draws'
