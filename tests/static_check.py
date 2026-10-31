@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -77,6 +77,12 @@ library=(ROOT/'modules/Library.ps1').read_text(encoding='utf-8')
 assert "recordAudio = 'off'" in library and 'recordMicId' in library
 assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
 assert 'normalizeMode' in audio and 'prepareRecording' in audio
+evidence=(ROOT/'tools/evidence-capture.ps1').read_text(encoding='utf-8')
+assert 'CopyFromScreen' not in evidence and 'Get-SnapShackleRect' not in evidence and 'Get-SnapShackleWindows' not in evidence, 'evidence capture must only capture windows it draws'
+assert 'CaptureWindow([long]$form.Handle' in evidence and 'New-SnapShackleSyntheticWindow' in evidence
+assert 'Invoke-WebRequest' not in evidence and 'http://' not in evidence and 'https://' not in evidence
+assert all(p in (ROOT/'modules/Redact.ps1').read_text(encoding='utf-8') for p in ['email','ssn','card','dodid','phone','ip']), 'redaction kinds'
+print('PASS: evidence capture draws its own windows, never copies the screen, and stays local')
 print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
 
 # A restarted server reuses the port. The old tab must say the session is gone, and the tray must

@@ -1,0 +1,44 @@
+{
+  "redactTerms": ["Starling"],
+  "windows": [
+    {
+      "name": "01-sign-in",
+      "title": "Fleet Demo - Sign in",
+      "width": 820,
+      "height": 380,
+      "fontSize": 24,
+      "lines": [
+        "Sign in to the Fleet demo",
+        "Email: jane.doe@example.com",
+        "Project: Starling (demo data only)"
+      ],
+      "expect": ["email"]
+    },
+    {
+      "name": "02-contact-card",
+      "title": "Fleet Demo - Contact card",
+      "width": 900,
+      "height": 460,
+      "fontSize": 24,
+      "lines": [
+        "Contact: John Smith",
+        "Phone: 757-555-0142",
+        "SSN: 123-45-6789",
+        "Card: 5500 0000 0000 0004"
+      ],
+      "expect": ["phone", "ssn", "card"]
+    },
+    {
+      "name": "03-server-console",
+      "title": "Fleet Demo - Server console",
+      "width": 860,
+      "height": 340,
+      "fontSize": 24,
+      "lines": [
+        "Listening on 10.20.30.40 port 8765",
+        "Build 0.12.0 ready"
+      ],
+      "expect": ["ip"]
+    }
+  ]
+}

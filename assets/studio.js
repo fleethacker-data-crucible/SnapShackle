@@ -303,7 +303,10 @@ function renderFindings(){
   $('#redactApply').hidden=false;$('#redactApply').textContent=`Redact ${redactFindings.length} checked`;
 }
 $('#redactFind').onclick=async()=>{try{notify('Reading text…');const r=await recognize();redactFindings=SnapShackleRedact.detect(r.lines);renderFindings();
-  notify(redactFindings.length?`Found ${redactFindings.length} item(s) to redact (${r.engine}). Untick any you want to keep.`:`No sensitive text found (${r.engine})`)}catch(e){fail(e)}};
+  // OCR can return nothing for an image (or skip a line); say so, so "none found" is never mistaken for "checked and clean".
+  const read=(r.lines||[]).length;
+  if(!read)$('#redactFindings').textContent='OCR read no text in this image, so nothing could be checked. Cover sensitive areas with the Redact tool (X).';
+  notify(redactFindings.length?`Found ${redactFindings.length} item(s) to redact (${r.engine}, ${read} line${read===1?'':'s'} read). Untick any you want to keep.`:(read?`No sensitive text found in ${read} line${read===1?'':'s'} read by ${r.engine}. Check the image yourself before sharing.`:`${r.engine} read no text. Use the Redact tool (X) to cover sensitive areas by hand.`))}catch(e){fail(e)}};
 $('#redactFindings').onchange=()=>{const n=[...$('#redactFindings').querySelectorAll('input:checked')].length;$('#redactApply').textContent=`Redact ${n} checked`};
 $('#redactApply').onclick=()=>{const picked=[...$('#redactFindings').querySelectorAll('input:checked')].map(x=>redactFindings[+x.dataset.index]);
   const n=applyRedactions(picked.map(f=>f.box));redactFindings=[];$('#redactFindings').replaceChildren();$('#redactApply').hidden=true;
