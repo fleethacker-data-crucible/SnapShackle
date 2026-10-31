@@ -69,9 +69,11 @@ function Get-SnapShackleCaptureList([string]$Library, [string]$Query, [string]$P
 # origin, and the origin includes the port, so a port fallback would otherwise reset them.
 # stayInTray: keep the tray icon and hotkeys after the studio tab closes (like -Stay; Exit is in the tray menu).
 # recordAudio: off | system | mic | both. Off leaves screen video silent, as earlier builds did.
+# recordCamera: off | on (picture-in-picture camera in screen video), recordCameraCorner: br|bl|tr|tl,
+# recordCameraSize: small|medium|large, recordCameraId: optional camera device id. Off leaves video as before.
 # recordFormat: webm | mp4. MP4 only where the browser's MediaRecorder can write it; otherwise the recording is WebM.
 # recordMicId: optional microphone device id chosen in the studio. Empty uses the browser default.
-$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; recordFormat = 'webm' }
+$script:SnapShackleSettingDefaults = [ordered]@{ namePrefix = 'SnapShackle'; autoLibrary = $false; recordFps = 6; stayInTray = $false; theme = 'dark'; recordAudio = 'off'; recordMicId = ''; recordCamera = 'off'; recordCameraCorner = 'br'; recordCameraSize = 'medium'; recordCameraId = ''; recordFormat = 'webm' }
 function Get-SnapShackleSettings([string]$Path) {
     $settings = [ordered]@{}
     foreach ($key in $script:SnapShackleSettingDefaults.Keys) { $settings[$key] = $script:SnapShackleSettingDefaults[$key] }
@@ -110,6 +112,23 @@ function ConvertTo-SnapShackleSettings($Value) {
     if ($names -contains 'recordAudio') {
         $audio = ([string]$Value.recordAudio).Trim().ToLowerInvariant()
         if ($audio -in @('off', 'system', 'mic', 'both')) { $clean.recordAudio = $audio }
+    }
+    if ($names -contains 'recordCamera') {
+        $camera = ([string]$Value.recordCamera).Trim().ToLowerInvariant()
+        if ($camera -in @('off', 'on')) { $clean.recordCamera = $camera }
+    }
+    if ($names -contains 'recordCameraCorner') {
+        $corner = ([string]$Value.recordCameraCorner).Trim().ToLowerInvariant()
+        if ($corner -in @('br', 'bl', 'tr', 'tl')) { $clean.recordCameraCorner = $corner }
+    }
+    if ($names -contains 'recordCameraSize') {
+        $size = ([string]$Value.recordCameraSize).Trim().ToLowerInvariant()
+        if ($size -in @('small', 'medium', 'large')) { $clean.recordCameraSize = $size }
+    }
+    if ($names -contains 'recordCameraId') {
+        $cameraId = ([string]$Value.recordCameraId).Trim() -replace '[^A-Za-z0-9_+=./-]', ''
+        if ($cameraId.Length -gt 256) { $cameraId = $cameraId.Substring(0, 256) }
+        $clean.recordCameraId = $cameraId
     }
     if ($names -contains 'recordFormat') {
         $format = ([string]$Value.recordFormat).Trim().ToLowerInvariant()
