@@ -10,7 +10,8 @@
   -Max            Most captures to list or export (default 200, at most 250: the library list's own limit).
   -IncludeText    Put the OCR text of each capture in the output / manifest (otherwise only its length).
   -Json           List as one JSON document (schema snapshackle.handoff/1) instead of a table.
-  export copies each PNG and its .meta.json sidecar into -OutDir and writes handoff.json there. An existing file in
+  export copies each PNG and its .meta.json sidecar into -OutDir and writes handoff.json there (an earlier
+  handoff.json keeps its entries; each run adds only its own captures). An existing file in
   -OutDir is never overwritten: it is reported as skipped. -DryRun reports what would be copied and writes nothing.
   Exit codes: 0 done, 1 failed, 2 wrong arguments.
 #>
@@ -46,7 +47,8 @@ if (-not [IO.Directory]::Exists($Library)) { Stop-Failed ('the capture folder wa
 $library = [IO.Path]::GetFullPath($Library)
 $sinceDate = $null
 if ($Since) { try { $sinceDate = [datetime]::Parse($Since, [Globalization.CultureInfo]::InvariantCulture) } catch { Stop-Usage ('-Since is not a date: ' + $Since) } }
-$wanted = @($Name | Where-Object { $_ })
+# Under powershell -File a comma list arrives as one string, so split it here.
+$wanted = @($Name | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 foreach ($n in $wanted) { if ($n -notmatch ('^' + $script:NamePattern + '$')) { Stop-Usage ('not a capture name: ' + $n) } }
 if ($Mode -eq 'export') {
     if (-not $OutDir) { Stop-Usage 'export needs -OutDir' }
@@ -88,6 +90,16 @@ if ($Mode -eq 'list') {
 # export
 $copied = New-Object System.Collections.Generic.List[object]
 $skipped = New-Object System.Collections.Generic.List[object]
+$manifestPath = Join-Path $out 'handoff.json'
+# An earlier export into this folder keeps its entries (hashes, tags, text): this run only adds its own captures.
+$earlier = @()
+$createdAt = (Get-Date).ToString('o')
+if ([IO.File]::Exists($manifestPath)) {
+    try { $old = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json } catch { $old = $null }
+    if (-not $old -or $old.schema -ne $script:HandoffSchema) { Stop-Failed ('handoff.json in the output folder is not a hand-off manifest; nothing was copied: ' + $manifestPath) }
+    $earlier = @($old.captures | Where-Object { $_ })
+    if ($old.createdAt) { $createdAt = [string]$old.createdAt }
+}
 if (-not $DryRun) { [void][IO.Directory]::CreateDirectory($out) }
 foreach ($e in $entries) {
     $target = Join-Path $out $e.name
@@ -98,13 +110,14 @@ foreach ($e in $entries) {
     }
     $copied.Add($e)
 }
-$manifest = [ordered]@{ schema = $script:HandoffSchema; source = 'SnapShackle'; createdAt = (Get-Date).ToString('o'); count = $copied.Count; captures = $copied.ToArray(); skipped = $skipped.ToArray() }
+$copiedNames = @($copied | ForEach-Object { $_.name })
+$listed = @(@($earlier | Where-Object { $copiedNames -notcontains $_.name }) + $copied.ToArray())
+# skipped is about this run only; a skipped file keeps the entry an earlier run wrote for it.
+$manifest = [ordered]@{ schema = $script:HandoffSchema; source = 'SnapShackle'; createdAt = $createdAt; updatedAt = (Get-Date).ToString('o'); count = $listed.Count; captures = $listed; skipped = $skipped.ToArray() }
 if (-not $DryRun) {
-    $manifestPath = Join-Path $out 'handoff.json'
     $tmp = $manifestPath + '.tmp'
     [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $manifest -Depth 6), [Text.UTF8Encoding]::new($false))
-    if ([IO.File]::Exists($manifestPath)) { [IO.File]::Delete($manifestPath) }
-    [IO.File]::Move($tmp, $manifestPath)
+    if ([IO.File]::Exists($manifestPath)) { $bak = $manifestPath + '.bak'; [IO.File]::Replace($tmp, $manifestPath, $bak); [IO.File]::Delete($bak) } else { [IO.File]::Move($tmp, $manifestPath) }
 }
 if ($Json) { ConvertTo-Json -InputObject (@{ dryRun = [bool]$DryRun; copied = $copied.Count; skipped = $skipped.Count; manifest = $(if ($DryRun) { $null } else { 'handoff.json' }) }) -Compress }
 else { Write-Host ($(if ($DryRun) { 'Would copy ' } else { 'Copied ' }) + $copied.Count + ' capture(s) to ' + $out + '; skipped ' + $skipped.Count + '.') }

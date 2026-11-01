@@ -94,9 +94,36 @@ try {
         $r = Invoke-Handoff @('-Mode', 'export', '-Library', $lib, '-OutDir', $out, '-Json')
         Assert-True ($r.Exit -eq 0 -and $r.Json.copied -eq 0 -and $r.Json.skipped -eq 3) ('second export: ' + $r.Text)
         Assert-True ([IO.File]::ReadAllText((Join-Path $out $a)) -eq 'changed by someone else') 'an existing file was overwritten'
+        $kept = [IO.File]::ReadAllText((Join-Path $out 'handoff.json')) | ConvertFrom-Json
+        Assert-True ($kept.count -eq 3 -and @($kept.captures).Count -eq 3) ('the first run''s manifest entries were lost: ' + $kept.count)
+        Assert-True (($kept.captures | Where-Object { $_.name -eq $a }).ocr -eq 'Quarterly readiness report') 'the first run''s text was lost from the manifest'
+        Assert-True (@($kept.skipped).Count -eq 3) 'the second run should report what it skipped'
         $dry = Join-Path $work 'out2'
         $d = Invoke-Handoff @('-Mode', 'export', '-Library', $lib, '-OutDir', $dry, '-DryRun', '-Json')
         Assert-True ($d.Exit -eq 0 -and $d.Json.dryRun -eq $true -and $d.Json.copied -eq 3 -and -not [IO.Directory]::Exists($dry)) ('dry run wrote something: ' + $d.Text)
+    }
+    Test-Case 'a later export adds to the manifest, lists a skipped file once, and an unreadable manifest stops it' {
+        $out = Join-Path $work 'out3'
+        $r1 = Invoke-Handoff @('-Mode', 'export', '-Library', $lib, '-OutDir', $out, '-Name', $a, '-IncludeText', '-Json')
+        Assert-True ($r1.Exit -eq 0 -and $r1.Json.copied -eq 1) ('first partial export: ' + $r1.Text + $r1.Err)
+        $r2 = Invoke-Handoff @('-Mode', 'export', '-Library', $lib, '-OutDir', $out, '-Json')
+        Assert-True ($r2.Exit -eq 0 -and $r2.Json.copied -eq 2 -and $r2.Json.skipped -eq 1) ('second export: ' + $r2.Text + $r2.Err)
+        $m = [IO.File]::ReadAllText((Join-Path $out 'handoff.json')) | ConvertFrom-Json
+        Assert-True ($m.count -eq 3 -and @($m.captures).Count -eq 3) ('manifest should list all three captures: ' + $m.count)
+        Assert-True (@($m.captures | Where-Object { $_.name -eq $a }).Count -eq 1) 'a skipped file was listed twice'
+        Assert-True (($m.captures | Where-Object { $_.name -eq $a }).ocr -eq 'Quarterly readiness report') 'the earlier entry lost its text'
+        foreach ($e in $m.captures) { Assert-True ($e.sha256 -eq (Get-Sha (Join-Path $out $e.file))) ('manifest hash wrong for ' + $e.file) }
+        Assert-True (-not [IO.File]::Exists((Join-Path $out 'handoff.json.tmp'))) 'a temporary manifest was left behind'
+        $bad = Join-Path $work 'out4'
+        [void][IO.Directory]::CreateDirectory($bad)
+        [IO.File]::WriteAllText((Join-Path $bad 'handoff.json'), 'not json', $utf8)
+        $r3 = Invoke-Handoff @('-Mode', 'export', '-Library', $lib, '-OutDir', $bad, '-Json')
+        Assert-True ($r3.Exit -eq 1 -and -not [IO.File]::Exists((Join-Path $bad $a))) ('an unreadable manifest should stop the export before copying: ' + $r3.Exit)
+        Assert-True ([IO.File]::ReadAllText((Join-Path $bad 'handoff.json')) -eq 'not json') 'the unreadable manifest was replaced'
+    }
+    Test-Case 'a comma list of names works as one -Name argument' {
+        $r = Invoke-Handoff @('-Mode', 'list', '-Library', $lib, '-Json', '-Name', ($a + ',' + $b))
+        Assert-True ($r.Exit -eq 0 -and $r.Json.count -eq 2) ('comma list: ' + $r.Text + $r.Err)
     }
     Test-Case 'bad arguments and a missing library exit with the documented codes' {
         Assert-True ((Invoke-Handoff @('-Mode', 'export', '-Library', $lib)).Exit -eq 2) 'export without -OutDir'
