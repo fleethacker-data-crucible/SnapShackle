@@ -21,7 +21,7 @@ MOCK = r"""() => {
     if(url.startsWith('/api/settings')){if(options.method==='PUT'){window.__saved={...window.__saved,...JSON.parse(options.body)};return json({...window.__saved,saved:true})}return json({...window.__saved,saved:true})}
     if(url.startsWith('/api/heartbeat'))return json({autoStop:true,timeoutSeconds:20});
     if(url.startsWith('/api/events'))return json({events:[],latest:0});
-    if(url==='/api/ai/status')return json({enabled:window.__saved.aiSuggest==='on',routerUrl:'http://127.0.0.1:8776',keySource:'env',privacy:window.__saved.aiPrivacy,problem:''});
+    if(url==='/api/ai/status')return json({enabled:window.__saved.aiSuggest==='on',routerUrl:'http://127.0.0.1:8776',keySource:'credential-manager',privacy:window.__saved.aiPrivacy,problem:''});
     if(url.startsWith('/api/ai/')){window.__calls.push(url);if(window.__saved.aiSuggest!=='on')return json({error:'AI suggestions are off.'},409);
       if(url==='/api/ai/alt-text')return json({text:'A report dialog with a Save button.',route:'smart',target:'fake/vision-1'});
       return json({suggestions:[{kind:'redact',x:0.1,y:0.1,w:0.2,h:0.1,label:'email'},{kind:'arrow',x:0.5,y:0.5,w:0.2,h:0.2,label:'look here'},{kind:'step',x:0.7,y:0.1,w:0.1,h:0.1,label:'first'}],route:'smart',target:'fake/vision-1'})}
@@ -60,7 +60,7 @@ with sync_playwright() as p:
     assert page.evaluate('window.__saved.aiPrivacy') == 'local'
     page.wait_for_function('document.querySelector("#aiStatus").textContent.startsWith("On")', timeout=6000)
     status = page.locator('#aiStatus').inner_text()
-    assert '127.0.0.1:8776' in status and 'environment' in status and 'local models only' in status, status
+    assert '127.0.0.1:8776' in status and 'Credential Manager' in status and 'local models only' in status, status
     assert page.locator('#aiAltText').is_enabled() and page.locator('#aiSuggestBtn').is_enabled()
     # Alt text lands in the box and can become the note.
     page.locator('#aiAltText').click()
