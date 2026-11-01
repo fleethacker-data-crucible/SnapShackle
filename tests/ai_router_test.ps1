@@ -1,7 +1,7 @@
 <#
   Tests the optional AI help (alt text and annotation suggestions) against a fake router, never a real one.
-  Part 1 runs modules/Router.ps1 in this process: the router address rules, how the client key is found (environment,
-  then a vault reader), the clean-up of the model's suggestions, a refused key and a router that is not running.
+  Part 1 runs modules/Router.ps1 in this process: the router address rules, how the client key is read (Windows Credential Manager,
+  through a replaceable reader), the clean-up of the model's suggestions, a refused key and a router that is not running.
   Part 2 starts a real SnapShackle host (no tray, no browser, temporary data folder) pointed at tests/fake_router.ps1
   and checks the routes: off by default, the right headers and image reach the router, and the key is never shown,
   saved or logged. Images are synthetic; nothing leaves this computer.
@@ -47,47 +47,57 @@ function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok') {
     throw 'the fake router did not start'
 }
 $saved = @{}
-foreach ($n in 'SNAPSHACKLE_AI_ENDPOINT_URL', 'LLM_URL', 'SNAPSHACKLE_ROUTER_KEY', 'SNAPSHACKLE_LAZARETTE_ITEM_Router') { $saved[$n] = [Environment]::GetEnvironmentVariable($n) }
+foreach ($n in 'SNAPSHACKLE_FAIRLEAD_URL', 'SNAPSHACKLE_FAIRLEAD_TARGET', 'LLM_URL') { $saved[$n] = [Environment]::GetEnvironmentVariable($n) }
 function Reset-Env { foreach ($n in $saved.Keys) { [Environment]::SetEnvironmentVariable($n, $saved[$n]) } }
 $procs = @()
 try {
     Reset-Env
-    [Environment]::SetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL', $null); [Environment]::SetEnvironmentVariable('LLM_URL', $null)
-    [Environment]::SetEnvironmentVariable('SNAPSHACKLE_ROUTER_KEY', $null); [Environment]::SetEnvironmentVariable('SNAPSHACKLE_LAZARETTE_ITEM_Router', $null)
+    foreach ($n in 'SNAPSHACKLE_FAIRLEAD_URL', 'SNAPSHACKLE_FAIRLEAD_TARGET', 'LLM_URL') { [Environment]::SetEnvironmentVariable($n, $null) }
+    Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
 
     Test-Case 'the router address defaults to Fairlead on 127.0.0.1:8776 and only a loopback address is accepted' {
         Assert-True ((Get-SnapShackleRouterUrl) -eq 'http://127.0.0.1:8776') 'default address'
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL', 'http://localhost:9000/')
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', 'http://localhost:9000/')
         Assert-True ((Get-SnapShackleRouterUrl) -eq 'http://localhost:9000') 'override with trailing slash'
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL', $null)
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $null)
         [Environment]::SetEnvironmentVariable('LLM_URL', 'http://127.0.0.1:9100')
-        Assert-True ((Get-SnapShackleRouterUrl) -eq 'http://127.0.0.1:9100') 'LLM_URL fallback'
+        Assert-True ((Get-SnapShackleRouterUrl) -eq 'http://127.0.0.1:8776') 'other variables are not read'
+        [Environment]::SetEnvironmentVariable('LLM_URL', $null)
         foreach ($bad in 'https://example.com', 'http://10.0.0.5:8776', 'http://127.0.0.1.evil.example:80', 'http://127.0.0.1', 'ftp://127.0.0.1:21', 'http://127.0.0.1:8776/..\x') {
-            [Environment]::SetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL', $bad)
+            [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $bad)
             $threw = $false; try { [void](Get-SnapShackleRouterUrl) } catch { $threw = $true }
             Assert-True $threw "accepted $bad"
         }
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL', $null); [Environment]::SetEnvironmentVariable('LLM_URL', $null)
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $null)
     }
-    Test-Case 'the client key comes from the environment, then the vault item by name, else none' {
-        $k = Resolve-SnapShackleRouterKey
-        Assert-True ($k.source -eq 'none' -and $k.key -eq '') 'no key should be none'
+    Test-Case 'the client key is read only from Windows Credential Manager (Fairlead/SnapShackle), else none with a plain note' {
         $script:asked = @()
-        function global:Get-LazaretteSecret { param([string]$Service) $script:asked += $Service; return 'fl-from-vault' }
+        Set-SnapShackleCredentialReader { param([string]$Target) $script:asked += $Target; 'fl-from-store' }
         $k = Resolve-SnapShackleRouterKey
-        Assert-True ($k.source -eq 'vault' -and $k.key -eq 'fl-from-vault' -and $script:asked[0] -eq 'snapshackle-router-key') ('vault read: ' + ($k | ConvertTo-Json -Compress))
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_LAZARETTE_ITEM_Router', 'my-router-item')
+        Assert-True ($k.source -eq 'credential-manager' -and $k.key -eq 'fl-from-store' -and $script:asked[0] -eq 'Fairlead/SnapShackle') ('read: ' + ($k | ConvertTo-Json -Compress))
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_TARGET', 'Fairlead/Other')
         $null = Resolve-SnapShackleRouterKey
-        Assert-True ($script:asked[-1] -eq 'my-router-item') 'item name override not used'
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_ROUTER_KEY', 'fl-from-env')
+        Assert-True ($script:asked[-1] -eq 'Fairlead/SnapShackle') 'a target outside Fairlead/SnapShackle-* must be ignored'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_TARGET', 'Fairlead/SnapShackle-test1')
+        $null = Resolve-SnapShackleRouterKey
+        Assert-True ($script:asked[-1] -eq 'Fairlead/SnapShackle-test1') 'a test target should be accepted'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_TARGET', $null)
+        Set-SnapShackleCredentialReader { param([string]$Target) $null }
         $k = Resolve-SnapShackleRouterKey
-        Assert-True ($k.source -eq 'env' -and $k.key -eq 'fl-from-env') 'the environment should win'
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_ROUTER_KEY', $null)
-        function global:Get-LazaretteSecret { param([string]$Service) throw 'Vault is locked' }
+        Assert-True ($k.source -eq 'none' -and $k.key -eq '' -and $k.note -eq 'Open Fairlead and install a key for SnapShackle.') ('missing: ' + ($k | ConvertTo-Json -Compress))
+        Set-SnapShackleCredentialReader { param([string]$Target) throw 'credential store unavailable' }
         $k = Resolve-SnapShackleRouterKey
-        Assert-True ($k.source -eq 'none' -and $k.note -like '*not available*' -and -not ($k | ConvertTo-Json).Contains('Vault is locked')) 'a locked vault should be none with a plain note'
-        Remove-Item Function:\Get-LazaretteSecret
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_LAZARETTE_ITEM_Router', $null)
+        Assert-True ($k.source -eq 'none' -and -not ($k | ConvertTo-Json).Contains('unavailable')) 'a store error should be none with the plain note'
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+        Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([Text.Encoding]::Unicode.GetBytes('fl-abc123'))) -eq 'fl-abc123') 'a UTF-16 key is decoded'
+        Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([Text.Encoding]::UTF8.GetBytes('fl-abc123'))) -eq 'fl-abc123') 'a UTF-8 key is decoded'
+        Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([byte[]]@(1, 2, 3, 4, 5))) -eq '' -and (ConvertFrom-SnapShackleCredentialBlob ([byte[]]@())) -eq '' -and (ConvertFrom-SnapShackleCredentialBlob $null) -eq '') 'unprintable, empty or no blob is not a key'
+    }
+    Test-Case 'a call with no key installed stops before any request and says what to do' {
+        Set-SnapShackleCredentialReader { param([string]$Target) $null }
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+        Assert-True ($msg -eq 'Open Fairlead and install a key for SnapShackle.') ('no key: ' + $msg)
     }
     Test-Case 'suggestions are cleaned: known kinds only, clamped into the image, bad numbers dropped, capped' {
         $text = 'Sure: [{"kind":"redact","x":0.1,"y":0.2,"w":0.3,"h":0.1,"label":"email"},{"kind":"explode","x":0,"y":0,"w":1,"h":1},{"kind":"box","x":0.9,"y":0.9,"w":0.9,"h":0.9,"label":"big"},{"kind":"box","x":"nope","y":0,"w":0.1,"h":0.1},{"kind":"arrow","x":-3,"y":0,"w":0.0001,"h":0.5}] ok'
@@ -104,8 +114,8 @@ try {
     Test-Case 'a refused key and a router that is not running give plain errors' {
         $port = Get-FreePort; $log = Join-Path $work 'refuse.log'
         $procs += Start-FakeRouter $port $log 'refuse'
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL', "http://127.0.0.1:$port")
-        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_ROUTER_KEY', 'fl-wrong')
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-wrong' }
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
         Assert-True ($msg -like '*refused the key*' -and -not $msg.Contains('fl-wrong')) ('refused: ' + $msg)
         $procs[-1].Kill(); [void]$procs[-1].WaitForExit(3000)
@@ -115,9 +125,13 @@ try {
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $off) } catch { $msg = $_.Exception.Message }
         Assert-True ($msg -like '*are off*') ('off: ' + $msg)
         Reset-Env
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
     }
 
-    # Part 2: a real host pointed at the fake router.
+    # Part 2: a real host pointed at the fake router. The host is a separate process, so the key goes in a throwaway
+    # Credential Manager entry (Fairlead/SnapShackle-test-<id>), never the real Fairlead/SnapShackle one, removed at the end.
+    $script:testTarget = 'Fairlead/SnapShackle-test-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+    $null = & cmdkey.exe "/generic:$($script:testTarget)" '/user:fairlead' '/pass:fl-test-key-123' 2>&1
     $rport = Get-FreePort; $rlog = Join-Path $work 'router.log'
     $procs += Start-FakeRouter $rport $rlog 'ok'
     $hport = Get-FreePort
@@ -125,7 +139,7 @@ try {
     $psi.Arguments = '-NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File "' + (Join-Path $root 'Start-SnapShackle.ps1') + '" -NoBrowser -NoTray -AllowSecondInstance -Port ' + $hport
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $psi.EnvironmentVariables['LOCALAPPDATA'] = $appData; $psi.EnvironmentVariables['SNAPSHACKLE_AUTO_STOP'] = '0'
-    $psi.EnvironmentVariables['SNAPSHACKLE_AI_ENDPOINT_URL'] = "http://127.0.0.1:$rport"; $psi.EnvironmentVariables['SNAPSHACKLE_ROUTER_KEY'] = 'fl-test-key-123'
+    $psi.EnvironmentVariables['SNAPSHACKLE_FAIRLEAD_URL'] = "http://127.0.0.1:$rport"; $psi.EnvironmentVariables['SNAPSHACKLE_FAIRLEAD_TARGET'] = $script:testTarget
     $host1 = [Diagnostics.Process]::Start($psi); $procs += $host1
     $base = "http://127.0.0.1:$hport"
     function Invoke-Api([string]$Method, [string]$Path, $Body, [string]$Token, [byte[]]$Bytes, [string]$ContentType = 'application/json') {
@@ -153,7 +167,7 @@ try {
     Test-Case 'AI help is off by default: status says so, calls are refused, and nothing reaches the router' {
         Assert-True ((Invoke-Api 'GET' '/api/ai/status' $null '').Status -eq 403) 'status without a token'
         $st = Invoke-Api 'GET' '/api/ai/status' $null $token
-        Assert-True ($st.Json.enabled -eq $false -and $st.Json.keySource -eq 'env' -and $st.Json.routerUrl -eq "http://127.0.0.1:$rport" -and $st.Json.privacy -eq 'local') ('status: ' + $st.Text)
+        Assert-True ($st.Json.enabled -eq $false -and $st.Json.keySource -eq 'credential-manager' -and $st.Json.routerUrl -eq "http://127.0.0.1:$rport" -and $st.Json.privacy -eq 'local') ('status: ' + $st.Text)
         Assert-True (-not $st.Text.Contains('fl-test-key-123')) 'the status shows the key'
         $r = Invoke-Api 'POST' '/api/ai/alt-text' $null $token $png 'image/png'
         Assert-True ($r.Status -eq 409 -and $r.Json.error -like '*off*') ('expected 409: ' + $r.Status + ' ' + $r.Text)
@@ -165,7 +179,7 @@ try {
         $r = Invoke-Api 'POST' '/api/ai/alt-text' $null $token $png 'image/png'
         Assert-True ($r.Status -eq 200 -and $r.Json.text -like '*Quarterly report*' -and $r.Json.route -eq 'smart' -and $r.Json.target -eq 'fake/vision-1') ('alt text: ' + $r.Text)
         $seen = @(Get-RouterLog)[-1]
-        Assert-True ($seen.path -eq '/v1/chat/completions' -and $seen.authorization -eq 'Bearer fl-test-key-123' -and $seen.privacy -eq 'local' -and $seen.hasImage -eq $true) ('what the router saw: ' + ($seen | ConvertTo-Json -Compress))
+        Assert-True ($seen.path -eq '/v1/chat/completions' -and $seen.authorization -eq 'Bearer fl-test-key-123' -and $seen.privacy -eq 'local' -and $seen.label -eq 'SnapShackle' -and $seen.hasImage -eq $true) ('what the router saw: ' + ($seen | ConvertTo-Json -Compress))
         Assert-True (-not $r.Text.Contains('fl-test-key-123')) 'the answer shows the key'
     }
     Test-Case 'suggestions come back cleaned, with positions as fractions of the image' {
@@ -199,6 +213,7 @@ try {
 } finally {
     foreach ($p in $procs) { try { if ($null -ne $p -and -not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(5000) } } catch {} }
     Reset-Env
+    if ($script:testTarget) { $null = & cmdkey.exe "/delete:$($script:testTarget)" 2>&1 }
     try { [IO.Directory]::Delete($work, $true) } catch {}
 }
 if ($script:failures -gt 0) { Write-Failure "$($script:failures) AI router test(s) failed"; exit 1 }

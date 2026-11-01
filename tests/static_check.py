@@ -111,7 +111,7 @@ router=(ROOT/'modules/Router.ps1').read_text(encoding='utf-8')
 assert "aiSuggest = 'off'" in library and "'/api/ai/alt-text'" in host and 'modules/Router.ps1' in host, 'AI help must default to off and be served by the host'
 assert 'id="aiSuggest"' in ui and 'for="aiSuggest"' in ui and 'aria-describedby="aiSuggestHelp"' in ui and 'src="/assets/aisuggest.js"' in ui
 assert 'fetch(' not in (ROOT/'assets/aisuggest.js').read_text(encoding='utf-8') and '/v1/chat' not in studio, 'the page never calls the router; the host does'
-assert "only talks to a router on this computer" in router and 'X-Fairlead-Privacy' in router and 'SNAPSHACKLE_ROUTER_KEY' in router, 'router calls stay on this computer and ask for local models'
+assert "only talks to a router on this computer" in router and 'X-Fairlead-Privacy' in router and 'Fairlead/SnapShackle' in router and 'ROUTER_KEY' not in router, 'router calls stay on this computer, ask for local models and read the key from Credential Manager'
 assert 'ROUTER_KEY' not in studio and 'ROUTER_KEY' not in library and 'routerKey' not in library, 'the router key must not be a setting or reach the page'
 print('PASS: AI help is off by default, host-side only, loopback-only and keeps the router key out of settings and the page')
 assert all('id="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')) and all('for="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')), 'numeric layer fields need labels'

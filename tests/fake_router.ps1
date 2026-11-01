@@ -1,6 +1,6 @@
 <#
   A stand-in for the Fleet router (Fairlead) used by tests/ai_router_test.ps1. Listens on 127.0.0.1:<Port>, appends one
-  JSON line per request to <Log> (method, path, authorization, privacy header, whether an image was sent, and the system
+  JSON line per request to <Log> (method, path, authorization, privacy header, the X-Fairlead-Label header, whether an image was sent, and the system
   prompt), and answers /v1/chat/completions with canned text. -Mode refuse answers 401. Never reaches the network.
 #>
 param([int]$Port, [string]$Log, [string]$Mode = 'ok')
@@ -25,7 +25,7 @@ while ($listener.IsListening) {
         foreach ($part in @($body.messages[1].content)) { if ($part.type -eq 'image_url' -and ([string]$part.image_url.url).StartsWith('data:image/png;base64,')) { $hasImage = $true } }
     } catch {}
     $line = [ordered]@{ method = $c.Request.HttpMethod; path = $c.Request.Url.AbsolutePath; authorization = [string]$c.Request.Headers['Authorization']
-        privacy = [string]$c.Request.Headers['X-Fairlead-Privacy']; hasImage = $hasImage; system = $system.Substring(0, [Math]::Min(60, $system.Length)) }
+        privacy = [string]$c.Request.Headers['X-Fairlead-Privacy']; label = [string]$c.Request.Headers['X-Fairlead-Label']; hasImage = $hasImage; system = $system.Substring(0, [Math]::Min(60, $system.Length)) }
     [IO.File]::AppendAllText($Log, (ConvertTo-Json -InputObject $line -Compress) + [Environment]::NewLine)
     if ($c.Request.Url.AbsolutePath -ne '/v1/chat/completions') { Send $c 404 '{"error":"not here"}'; continue }
     if ($Mode -eq 'refuse') { Send $c 401 '{"error":"bad key"}'; continue }

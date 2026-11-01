@@ -2,19 +2,19 @@
 # Off until the person turns it on (aiSuggest). The host makes the call, never the browser, so the router key is
 # not in the page. The key is read when needed and held only in this process: never in settings, files or logs.
 #
-# Contract (Fleet relationships, 2026-10-30): one address for every model call, 127.0.0.1:8776 by default;
-# SNAPSHACKLE_AI_ENDPOINT_URL (or LLM_URL) overrides it; each app has its own client key; Lazarette holds the key
-# and an app reads its item by name. This build accepts only a loopback router address, so a screenshot never
-# leaves this computer through SnapShackle itself. Requests carry X-Fairlead-Privacy: local unless the person
-# chose aiPrivacy = any.
+# Contract: one address for every model call, 127.0.0.1:8776 by default; SNAPSHACKLE_FAIRLEAD_URL changes the port or
+# path (loopback only). Each app has its own client key, installed by Fairlead into Windows Credential Manager as the
+# generic credential Fairlead/SnapShackle. This build accepts only a loopback router address, so a screenshot never
+# leaves this computer through SnapShackle itself. Requests carry X-Fairlead-Privacy: local unless the person chose
+# aiPrivacy = any, and X-Fairlead-Label: SnapShackle.
 $script:SnapShackleRouterDefaultUrl = 'http://127.0.0.1:8776'
-$script:SnapShackleRouterDefaultItem = 'snapshackle-router-key'
+$script:SnapShackleKeyTarget = 'Fairlead/SnapShackle'
+$script:SnapShackleMissingKeyMessage = 'Open Fairlead and install a key for SnapShackle.'
 $script:SnapShackleSuggestKinds = @('redact', 'box', 'arrow', 'step', 'text')
 
 # The router address: environment override or the default. Throws unless it is a plain http loopback address.
 function Get-SnapShackleRouterUrl {
-    $url = [Environment]::GetEnvironmentVariable('SNAPSHACKLE_AI_ENDPOINT_URL')
-    if (-not $url) { $url = [Environment]::GetEnvironmentVariable('LLM_URL') }
+    $url = [Environment]::GetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL')
     if (-not $url) { $url = $script:SnapShackleRouterDefaultUrl }
     $url = $url.Trim().TrimEnd('/')
     if ($url -notmatch '^http://(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}(/[A-Za-z0-9._/-]*)?$') {
@@ -22,27 +22,86 @@ function Get-SnapShackleRouterUrl {
     }
     return $url
 }
-# The vault item that holds this app's client key, by name. SNAPSHACKLE_LAZARETTE_ITEM_Router overrides the name.
-function Get-SnapShackleRouterItemName {
-    $name = [Environment]::GetEnvironmentVariable('SNAPSHACKLE_LAZARETTE_ITEM_Router')
-    if ($name) { return $name.Trim() }
-    return $script:SnapShackleRouterDefaultItem
+
+# The Credential Manager target. SNAPSHACKLE_FAIRLEAD_TARGET exists for tests only: it may name another
+# Fairlead/SnapShackle-<name> credential and nothing else.
+function Get-SnapShackleKeyTarget {
+    $t = [Environment]::GetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_TARGET')
+    if ($t -and $t -cmatch '^Fairlead/SnapShackle-[A-Za-z0-9-]{1,30}$') { return $t }
+    return $script:SnapShackleKeyTarget
 }
-# Finds the client key. Order: SNAPSHACKLE_ROUTER_KEY in the process environment (set by a launcher that unlocked the
-# vault), then the Lazarette item when its helpers are already loaded and unlocked in this process, then none (the
-# router lets this computer in without a key when it is set that way). Returns @{ key; source; note }.
-function Resolve-SnapShackleRouterKey {
-    $fromEnv = [Environment]::GetEnvironmentVariable('SNAPSHACKLE_ROUTER_KEY')
-    if ($fromEnv) { return @{ key = $fromEnv.Trim(); source = 'env'; note = '' } }
-    $reader = $null
-    foreach ($candidate in @('Get-LazaretteSecret', 'Get-ArcSecret')) { if (Get-Command $candidate -CommandType Function, Alias -ErrorAction SilentlyContinue) { $reader = $candidate; break } }
-    if ($reader) {
-        try {
-            $secret = & $reader -Service (Get-SnapShackleRouterItemName)
-            if ($secret) { return @{ key = ([string]$secret).Trim(); source = 'vault'; note = '' } }
-        } catch { return @{ key = ''; source = 'none'; note = 'The vault item was not available (locked, missing or ambiguous).' } }
+
+if (-not ('SnapShackleCredReader' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class SnapShackleCredReader
+{
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct CREDENTIAL
+    {
+        public int Flags;
+        public int Type;
+        public string TargetName;
+        public string Comment;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
+        public int CredentialBlobSize;
+        public IntPtr CredentialBlob;
+        public int Persist;
+        public int AttributeCount;
+        public IntPtr Attributes;
+        public string TargetAlias;
+        public string UserName;
     }
-    return @{ key = ''; source = 'none'; note = '' }
+    [DllImport("advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CredRead(string target, int type, int flags, out IntPtr credential);
+    [DllImport("advapi32.dll")]
+    private static extern void CredFree(IntPtr buffer);
+
+    public static byte[] ReadBlob(string target)
+    {
+        IntPtr p;
+        if (!CredRead(target, 1, 0, out p)) return null;
+        try
+        {
+            CREDENTIAL c = (CREDENTIAL)Marshal.PtrToStructure(p, typeof(CREDENTIAL));
+            byte[] blob = new byte[c.CredentialBlobSize];
+            if (c.CredentialBlobSize > 0) Marshal.Copy(c.CredentialBlob, blob, 0, c.CredentialBlobSize);
+            return blob;
+        }
+        finally { CredFree(p); }
+    }
+}
+'@
+}
+
+# Fairlead stores the key as UTF-16 text; UTF-8 text is accepted as well. Returns '' when the blob holds no printable text.
+function ConvertFrom-SnapShackleCredentialBlob([byte[]]$Blob) {
+    if ($null -eq $Blob -or $Blob.Length -eq 0) { return '' }
+    foreach ($enc in @([Text.Encoding]::Unicode, (New-Object System.Text.UTF8Encoding $false))) {
+        $t = $enc.GetString($Blob).Trim([char]0).Trim()
+        if ($t.Length -gt 0 -and $t -notmatch '[^\x21-\x7E]') { return $t }
+    }
+    return ''
+}
+
+# Replaceable so tests never read the real Credential Manager: { param($Target) -> key text or $null }.
+$script:SnapShackleCredentialReader = {
+    param([string]$Target)
+    return (ConvertFrom-SnapShackleCredentialBlob ([SnapShackleCredReader]::ReadBlob($Target)))
+}
+function Set-SnapShackleCredentialReader([scriptblock]$Reader) {
+    if ($Reader) { $script:SnapShackleCredentialReader = $Reader }
+}
+
+# Finds the client key in Windows Credential Manager. Returns @{ key; source; note }; source is 'credential-manager'
+# or 'none' (then note says what to do). Never returns an error that contains the key.
+function Resolve-SnapShackleRouterKey {
+    $key = ''
+    try { $key = [string](& $script:SnapShackleCredentialReader (Get-SnapShackleKeyTarget)) } catch { $key = '' }
+    $key = $key.Trim()
+    if ($key) { return @{ key = $key; source = 'credential-manager'; note = '' } }
+    return @{ key = ''; source = 'none'; note = $script:SnapShackleMissingKeyMessage }
 }
 # What the studio may know: never the key itself.
 function Get-SnapShackleAiStatus($Settings) {
@@ -58,14 +117,15 @@ function Invoke-SnapShackleRouterChat([string]$Model, $Messages, $Settings, [int
     if (([string]$Settings.aiSuggest) -ne 'on') { throw 'AI suggestions are off. Turn them on under Workflows, Settings.' }
     $base = Get-SnapShackleRouterUrl
     $key = Resolve-SnapShackleRouterKey
+    if (-not $key.key) { throw $script:SnapShackleMissingKeyMessage }
     $payload = ConvertTo-Json -InputObject ([ordered]@{ model = $Model; messages = $Messages; max_tokens = $MaxTokens; temperature = 0.2; stream = $false }) -Depth 12 -Compress
     $request = [Net.HttpWebRequest]::Create($base + '/v1/chat/completions')
     $request.Method = 'POST'; $request.Proxy = $null; $request.Timeout = $TimeoutMs; $request.ReadWriteTimeout = $TimeoutMs
     $request.KeepAlive = $false; $request.ServicePoint.Expect100Continue = $false; $request.ContentType = 'application/json'
     $request.UserAgent = 'SnapShackle'
-    if ($key.key) { $request.Headers.Add('Authorization', 'Bearer ' + $key.key) }
+    $request.Headers.Add('Authorization', 'Bearer ' + $key.key)
     if (([string]$Settings.aiPrivacy) -ne 'any') { $request.Headers.Add('X-Fairlead-Privacy', 'local') }
-    $request.Headers.Add('X-Fairlead-Label', 'snapshackle')
+    $request.Headers.Add('X-Fairlead-Label', 'SnapShackle')
     $body = [Text.Encoding]::UTF8.GetBytes($payload)
     $request.ContentLength = $body.Length
     try {
@@ -73,9 +133,9 @@ function Invoke-SnapShackleRouterChat([string]$Model, $Messages, $Settings, [int
         $response = $request.GetResponse()
     } catch [Net.WebException] {
         $failed = $_.Exception.Response
-        if ($null -eq $failed) { throw 'The router did not answer. Start Fairlead (127.0.0.1:8776) or check SNAPSHACKLE_AI_ENDPOINT_URL.' }
+        if ($null -eq $failed) { throw 'The router did not answer. Start Fairlead (127.0.0.1:8776) or check SNAPSHACKLE_FAIRLEAD_URL.' }
         $code = [int]$failed.StatusCode; $failed.Close()
-        if ($code -eq 401 -or $code -eq 403) { throw 'The router refused the key. Check the vault item ' + (Get-SnapShackleRouterItemName) + ' (or SNAPSHACKLE_ROUTER_KEY).' }
+        if ($code -eq 401 -or $code -eq 403) { throw 'The router refused the key. Open Fairlead and install a new key for SnapShackle.' }
         throw ('The router answered with an error (' + $code + ').')
     }
     try {

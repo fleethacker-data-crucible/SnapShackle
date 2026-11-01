@@ -372,7 +372,7 @@ window.addEventListener('pagehide',()=>{try{voiceSession?.cancel()}catch{}});
 let aiSuggestions=[];
 async function refreshAiStatus(){
   try{const s=await (await api('/api/ai/status')).json();
-    $('#aiStatus').textContent=!s.enabled?'Off. Turn it on under Settings, then save.':'On. Router '+s.routerUrl+(s.keySource==='none'?' (no key found: the router must let this computer in without one)':' (key from '+(s.keySource==='vault'?'the vault':'the environment')+')')+(s.privacy==='local'?', local models only.':'.')+(s.problem?' '+s.problem:'');
+    $('#aiStatus').textContent=!s.enabled?'Off. Turn it on under Settings, then save.':'On. Router '+s.routerUrl+(s.keySource==='none'?' (no key installed)':' (key from Windows Credential Manager)')+(s.privacy==='local'?', local models only.':'.')+(s.problem?' '+s.problem:'');
     $('#aiAltText').disabled=$('#aiSuggestBtn').disabled=!s.enabled}catch{}
 }
 async function aiCall(path){
