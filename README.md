@@ -9,7 +9,7 @@
 
 A **local-first Windows screenshot and annotation studio** using native Windows capture, a built-in PowerShell HTTP host, and an offline browser UI. Designed to run without Node, Python, npm, CDN, a package installer, or administrator rights on an authorized Windows workstation.
 
-See [the roadmap](https://claude.ai/artifact/K9as42yNHQ2fxTx2j5A7Ag) for where it is going.
+See the roadmap for where it is going.
 
 ## The name
 
