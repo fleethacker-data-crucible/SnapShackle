@@ -75,10 +75,9 @@ function Stop-Usage([string]$Command, [string]$Message) { Write-Result $Command 
 try { [void](Set-SnapShackleDataRoot $dataDirArg) } catch { Stop-Usage 'snapshackle' $_.Exception.Message }
 
 if ($jobPath) {
-    $jobContext = @{ Transport = 'cli'; Root = $root }
-    $job = Invoke-FleetActionJob -Path $jobPath -Context $jobContext -Confirmed:([bool]$flags['yes']) -DryRun:([bool]$flags['dry-run'])
-    if (-not $job.Ok) { Write-Result ('job ' + $jobPath) $false $null $job.Error $job.ErrorType $job.Exit }
-    Write-Result ('job ' + $jobPath) $true $job.Result '' '' 0
+    $job = Invoke-FleetJob -Path $jobPath -Confirmed:([bool]$flags['yes']) -DryRun:([bool]$flags['dry-run'])
+    if (-not $job.ok) { Write-Result ('job ' + $jobPath) $false $null ([string]$job.error.message) 'usage' (Get-FleetExitCode -Envelope $job) }
+    Write-Result ('job ' + $jobPath) $true $job.result '' '' 0
 }
 
 # --- listing --------------------------------------------------------------------------------------------------------
@@ -164,14 +163,34 @@ foreach ($spec in @($cmd.options)) {
     if ($spec.type -eq 'int' -and $opts.ContainsKey($spec.name)) { $opts[$spec.name] = [int]$opts[$spec.name] }
 }
 
-$id = 'snapshackle.' + (($name -split ' ') -join '.')
-$actionContext = @{ Transport = 'cli'; Root = $root; Command = $cmd }
+$parts = @($name -split ' ')
 # --out on a JSON command is the result file, not an action argument.
 $actionArgs = @{}
 foreach ($key in @($opts.Keys)) {
     if ($key -eq 'out' -and $cmd.response -ne 'png') { continue }
     $actionArgs[$key] = $opts[$key]
 }
-$ran = Invoke-FleetAction -Id $id -Arguments $actionArgs -Context $actionContext -Confirmed:([bool]$flags['yes']) -DryRun:$false
-if (-not $ran.Ok) { Write-Result $name $false $null $ran.Error $ran.ErrorType $ran.Exit }
-Write-Result $name $true $ran.Result '' '' 0
+if ($parts[0] -eq 'commands') {
+    $session = Get-SnapShackleCliSession $root
+    if ($null -eq $session) { Write-Result $name $false $null 'SnapShackle is not running. Start it with: snapshackle app start' 'notrunning' 3 }
+    $response = Invoke-SnapShackleCliHttp 'GET' '/api/commands' ([string]$session.token) ([int]$session.port) $null '' @{}
+    if ($response.Status -lt 200 -or $response.Status -ge 300) { Write-Result $name $false $null ('HTTP ' + $response.Status) 'failed' 1 }
+    $data = ConvertFrom-SnapShackleCliBytes $response.Bytes
+    Write-Result $name $true $data '' '' 0
+}
+$script:SnapShackleCliContext = @{ Transport = 'cli'; Root = $root; Command = $cmd; Confirmed = [bool]$flags['yes'] }
+try { $ran = Invoke-FleetAction -App 'snapshackle' -Noun $parts[0] -Verb $parts[1] -Arguments $actionArgs -Confirmed:([bool]$flags['yes']) }
+finally { $script:SnapShackleCliContext = $null }
+if (-not $ran.ok) {
+    $kind = 'failed'
+    $exit = Get-FleetExitCode -Envelope $ran
+    if ([string]$ran.error.code -eq 'E_ARGS' -or [string]$ran.error.code -eq 'E_CONFIRM') { $kind = 'usage'; if ($exit -eq 4) { $exit = 2 } }
+    if ([string]$ran.error.code -eq 'E_NOT_FOUND') { $kind = 'notrunning' }
+    Write-Result $name $false $null ([string]$ran.error.message) $kind $exit
+}
+$payload = $ran.result
+if ($payload -is [System.Collections.IDictionary] -and $payload.Contains('__fleet')) {
+    if ($payload.Ok) { Write-Result $name $true $payload.Result '' '' ([int]$payload.Exit) }
+    Write-Result $name $false $null ([string]$payload.Error) ([string]$payload.ErrorType) ([int]$payload.Exit)
+}
+Write-Result $name $true $payload '' '' 0

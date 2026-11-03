@@ -103,6 +103,7 @@ kbd {
 .kbd-on-primary { margin-left: auto; background: color-mix(in srgb, var(--color-primary-foreground) 14%, transparent); border-color: color-mix(in srgb, var(--color-primary-foreground) 35%, transparent); color: var(--color-primary-foreground); }
 
 /* ---------- Buttons (Lazarette variants) ---------- */
+button, a { min-height: 32px; min-width: 32px; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 36px; padding: 0 14px; flex-shrink: 0;

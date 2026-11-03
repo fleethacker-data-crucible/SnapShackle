@@ -1,9 +1,11 @@
 {
-  "schema": "fleet.action.job/1",
-  "title": "Hand training captures to Capstan and Scrimshaw",
+  "version": 1,
   "steps": [
     {
-      "action": "snapshackle.handoff.list",
+      "id": "list",
+      "app": "snapshackle",
+      "noun": "handoff",
+      "verb": "list",
       "args": {
         "library": "C:\\Fleet\\SnapShackle\\Captures",
         "tag": "training",
@@ -12,7 +14,10 @@
       }
     },
     {
-      "action": "snapshackle.handoff.export",
+      "id": "export",
+      "app": "snapshackle",
+      "noun": "handoff",
+      "verb": "export",
       "args": {
         "library": "C:\\Fleet\\SnapShackle\\Captures",
         "tag": "training",

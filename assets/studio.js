@@ -47,7 +47,7 @@ function trackAction(el,work){
   if(el){el.setAttribute('aria-busy','true');el.setAttribute('aria-disabled','true')}
   return Promise.resolve().then(work).finally(()=>{
     if(!el)return;
-    el.removeAttribute('aria-busy');
+    el.setAttribute('aria-busy','false');
     el.setAttribute('aria-disabled',el.disabled?'true':'false');
   });
 }
@@ -213,7 +213,7 @@ async function refreshLibrary(){
   }
   for(let item of items.slice(0,90)){let button=document.createElement('button');button.className='capture-card'+(item.name===librarySelection?' active':'');button.dataset.capture=item.name;
     let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.textMatch?'Text in image matches · ':'')+((item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString());text.append(name,meta);button.append(preview,text);root.append(button);
-    button.setAttribute('data-action','snapshackle.library.get');button.setAttribute('aria-disabled','false');
+    button.setAttribute('aria-disabled','false');
     button.onclick=()=>trackAction(button,async()=>{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(blob,item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}).catch(fail);
     // Hidden cards incur no image decode or server work until scrolled into view.
     if(thumbnailObserver)thumbnailObserver.observe(button);

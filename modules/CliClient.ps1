@@ -133,7 +133,7 @@ function Invoke-SnapShackleCliTransport {
     if ($name -eq 'session stop') { $headers['X-SnapShackle-Intent'] = 'end-session' }
     if ($name -eq 'session stop' -and $cmd.method -eq 'POST' -and $null -eq $bytes) { $bytes = [byte[]]@(); $contentType = 'application/json' }
     try { $response = Invoke-SnapShackleCliHttp $cmd.method $route $token $port $bytes $contentType $headers }
-    catch { return (New-SnapShackleCliResult $false $null ('Could not reach SnapShackle: ' + (Protect-FleetLogText $_.Exception.Message)) 'notrunning' 3) }
+    catch { return (New-SnapShackleCliResult $false $null ('Could not reach SnapShackle: ' + $_.Exception.Message) 'notrunning' 3) }
     if ($response.Status -lt 200 -or $response.Status -ge 300) {
         $err = ConvertFrom-SnapShackleCliBytes $response.Bytes
         $message = 'HTTP ' + $response.Status
