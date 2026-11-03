@@ -388,8 +388,10 @@ function Invoke-SnapShackleRequest($Context) {
     if ($path -eq '/api/library' -and $method -eq 'GET') {
         # The list comes back as one array object (return ,$array); @(...) around it would nest it as
         # items:[[...]], which the studio rendered as a single broken card ("Invalid Date").
-        $ran = Invoke-FleetAction -Id 'snapshackle.library.list' -Arguments @{ q = [string]$request.QueryString['q'] } -Context @{ Transport = 'host' } -Confirmed
-        Send-Json $Context $ran.Result; return
+        # Same function as snapshackle.library.list (Get-SnapShackleCaptureList). Assigned here so a
+        # one-item list stays a JSON array.
+        [object[]]$items = Get-SnapShackleCaptureList $library $request.QueryString['q'] $CaptureNamePattern
+        Send-Json $Context @{items=$items};return
     }
     if ($path -eq '/api/library' -and $method -eq 'POST') {
         $bytes=Read-Body $Context 25000000;Assert-Png $bytes

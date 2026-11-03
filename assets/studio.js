@@ -30,7 +30,6 @@ settings.recordFormat=SnapShackleAudio.normalizeFormat(settings.recordFormat);
 function notify(message){$('#status').textContent=message}
 function readableError(error){
   let text=error&&error.message?String(error.message):String(error||'Something went wrong.');
-  text=text.replace(/Bearer\s+\S+/gi,'Bearer [redacted]');
   text=text.replace(/\b[0-9a-f]{32,}\b/gi,'[redacted]');
   if(/^Failed to fetch$/i.test(text)||/NetworkError/i.test(text)) return 'SnapShackle did not answer. It may have stopped.';
   if(text.length>400) text=text.slice(0,400)+'…';
