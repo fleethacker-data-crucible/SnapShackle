@@ -385,6 +385,7 @@ function Invoke-SnapShackleRequest($Context) {
         foreach ($shareProperty in @($share.PSObject.Properties)) { if ($null -ne $shareProperty.Value) { $shareArgs[$shareProperty.Name] = $shareProperty.Value } }
         $ran = Invoke-SnapShackleFleet -Noun 'share' -Verb 'send' -Arguments $shareArgs -Confirmed
         if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+        if ($ran.Result -is [hashtable] -and $ran.Result.ContainsKey('statusCode')) { Send-Json $Context @{error=[string]$ran.Result.error} ([int]$ran.Result.statusCode); return }
         Send-Json $Context $ran.Result
         return
     }
