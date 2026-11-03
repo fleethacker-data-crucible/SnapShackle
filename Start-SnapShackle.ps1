@@ -47,6 +47,7 @@ foreach ($unknown in $launch.Unknown) { Write-Warning ('Ignoring unknown option 
 . (Join-Path $root 'modules/Migration.ps1')
 . (Join-Path $root 'modules/Library.ps1')
 . (Join-Path $root 'modules/Cli.ps1')
+. (Join-Path $root 'modules/Actions.ps1')
 . (Join-Path $root 'modules/Tray.ps1')
 $SnapShackleVersion = ([IO.File]::ReadAllText((Join-Path $root 'VERSION'))).Trim()
 $library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle\Captures' } else { Join-Path $root 'captures' }
@@ -239,55 +240,98 @@ function Invoke-SnapShackleRequest($Context) {
         Send-Json $Context @{autoStop=(Test-SnapShackleAutoStop);timeoutSeconds=$presence.HeartbeatTimeout};return
     }
     if ($request.Headers['X-SnapShackle-Token'] -ne $sessionToken) { Send-Json $Context @{error='Invalid session'} 403;return }
+    if ($path -eq '/api/actions' -and $method -eq 'GET') { Send-Json $Context ([ordered]@{ schema = 'fleet.action.commands/1'; actions = @(Get-FleetAction -App 'snapshackle') }); return }
+    if ($method -eq 'POST' -and $path -match '^/api/actions/(snapshackle\.[a-z]+\.[a-z]+)$') {
+        $actionId = $Matches[1]
+        $idParts = $actionId.Split('.')
+        if ($idParts.Count -ne 3) { Send-Json $Context @{error='Unknown action'} 404; return }
+        $action = @(Get-FleetAction -App $idParts[0] -Noun $idParts[1] -Verb $idParts[2]) | Select-Object -First 1
+        if ($null -eq $action) { Send-Json $Context @{error='Unknown action'} 404; return }
+        $rawBody = ''
+        if ($request.ContentLength64 -gt 0) { $rawBody = [Text.Encoding]::UTF8.GetString((Read-Body $Context 20000000)) }
+        $parsed = $null
+        if ($rawBody.Trim()) { try { $parsed = $rawBody | ConvertFrom-Json } catch { Send-Json $Context @{error='Action body must be JSON'} 400; return } }
+        $actionArgs = @{}
+        if ($null -ne $parsed) { foreach ($actionProperty in @($parsed.PSObject.Properties)) { if ($null -ne $actionProperty.Value) { $actionArgs[$actionProperty.Name] = $actionProperty.Value } } }
+        $confirmed = ($request.Headers['X-SnapShackle-Confirm'] -eq 'yes')
+        if ($action.destructive -and -not $confirmed) { Send-Json $Context @{error='Confirmation required: send X-SnapShackle-Confirm: yes (CLI: --yes)';confirm=$true} 409; return }
+        if ($actionId -eq 'snapshackle.session.stop' -and $request.Headers['X-SnapShackle-Intent'] -ne 'end-session') { Send-Json $Context @{error='Missing intent'} 400; return }
+        $source = $(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'api' })
+        if ($action.destructive) { Write-SnapShackleAudit $runtimeDir ($action.noun + '-' + $action.verb) ([string]$actionArgs.name) $source }
+        $ran = Invoke-SnapShackleFleet -Noun $idParts[1] -Verb $idParts[2] -Arguments $actionArgs -SkipAudit $true -Confirmed:$confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+        $actionResult = $ran.Result
+        $actionStatus = 0
+        if ($actionResult -is [hashtable] -and $actionResult.ContainsKey('statusCode')) { $actionStatus = [int]$actionResult.statusCode }
+        if ($actionStatus -ge 400) { Send-Json $Context @{error=[string]$actionResult.error} $actionStatus; return }
+        if ($actionResult -is [hashtable] -and $actionResult.ContainsKey('png')) { Send-Response $Context ([byte[]]$actionResult.png) 'image/png'; return }
+        Send-Json $Context $actionResult
+        if ($actionId -eq 'snapshackle.library.save' -and $actionResult -is [hashtable] -and $actionResult.ContainsKey('name') -and $actionArgs.Contains('file') -and $actionArgs.file -and (Test-Path -LiteralPath ([string]$actionArgs.file))) {
+            $null = Update-SnapShackleOcrIndex $library ([string]$actionResult.name) ([IO.File]::ReadAllBytes([string]$actionArgs.file))
+        }
+        return
+    }
     if ($path -eq '/api/session/stop' -and $method -eq 'POST') {
         # End session in the studio. The intent header keeps a stray authenticated request from stopping SnapShackle.
         if ($request.Headers['X-SnapShackle-Intent'] -ne 'end-session') { Send-Json $Context @{error='Missing intent'} 400;return }
-        Write-SnapShackleAudit $runtimeDir 'session-stop' '' ($(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'studio' }))
+        $source = $(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'studio' })
+        Write-SnapShackleAudit $runtimeDir 'session-stop' '' $source
         if ($shared.Busy) { Send-Json $Context @{error='A capture is still being saved; try again in a moment'} 409;return }
+        $ran = Invoke-SnapShackleFleet -Noun 'session' -Verb 'stop' -Arguments @{} -SkipAudit $true -Confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
         Send-Json $Context @{stopped=$true}
-        $script:stopReason='End session in the studio.'
-        $shared.Quit=$true;return
+        return
     }
-    if ($path -eq '/api/commands' -and $method -eq 'GET') { Send-Json $Context (Get-SnapShackleCommandsDocument);return }
+    if ($path -eq '/api/commands' -and $method -eq 'GET') {
+        Send-Json $Context (Get-SnapShackleCommandsDocument); return
+    }
     if ($path -eq '/api/health' -and $method -eq 'GET') {
-        Send-Json $Context @{capture=$true;customDataDir=[bool]$script:SnapShackleDataRoot;ocr=(Test-SnapShackleOcr);version=$SnapShackleVersion;offline=$true;dpi=$script:SnapShackleDpiMode;hotkeys=@($shared.Hotkeys);lifecycle=(Get-SnapShackleLifecycleMode)};return
+        $ran = Invoke-SnapShackleFleet -Noun 'app' -Verb 'health' -Arguments @{} -Confirmed
+        Send-Json $Context $ran.Result; return
     }
     if ($path -eq '/api/screens' -and $method -eq 'GET') {
-        Send-Json $Context @{screens=@([Windows.Forms.Screen]::AllScreens | ForEach-Object {
-          @{name=$_.DeviceName;primary=$_.Primary;left=$_.Bounds.Left;top=$_.Bounds.Top;width=$_.Bounds.Width;height=$_.Bounds.Height}
-        })};return
+        $ran = Invoke-SnapShackleFleet -Noun 'screen' -Verb 'list' -Arguments @{} -Confirmed
+        Send-Json $Context $ran.Result; return
     }
-    if ($path -eq '/api/windows' -and $method -eq 'GET') { Send-Json $Context @{windows=@(Get-SnapShackleWindows)};return }
+    if ($path -eq '/api/windows' -and $method -eq 'GET') {
+        $ran = Invoke-SnapShackleFleet -Noun 'window' -Verb 'list' -Arguments @{} -Confirmed
+        Send-Json $Context $ran.Result; return
+    }
     if ($path -eq '/api/capture' -and $method -eq 'GET') {
         $q=$request.QueryString
-        Wait-SnapShackleDelay (Get-SnapShackleDelay $q)
+        $delay = 0
+        if ($q['delay'] -match '^\d+$') { $delay = [int]$q['delay'] }
         if ($q['window'] -match '^\d+$') {
             # PrintWindow: the window's own pixels, even where the studio or anything else covers it.
-            $png=Get-SnapShackleWindowCapture ([long]$q['window'])
-            $Context.Response.Headers.Add('X-SnapShackle-Capture-Method',[string]$script:SnapShackleLastWindowMethod)
+            $ran = Invoke-SnapShackleFleet -Noun 'capture' -Verb 'window' -Arguments @{ window = [int]$q['window']; delay = $delay } -Confirmed
+            if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+            $Context.Response.Headers.Add('X-SnapShackle-Capture-Method',[string]$ran.Result.method)
             Add-CaptureTimingHeaders $Context
-            Send-Response $Context $png 'image/png';return
-        }
-        $r=[Windows.Forms.SystemInformation]::VirtualScreen
-        if ($q['screen'] -match '^\d+$') {
-            $screens=@([Windows.Forms.Screen]::AllScreens);$i=[int]$q['screen']
-            if ($i -ge $screens.Count) { throw 'Invalid screen' }
-            $r=$screens[$i].Bounds
+            Send-Response $Context ([byte[]]$ran.Result.png) 'image/png'; return
         }
         if ($q['x'] -match '^-?\d+$' -and $q['y'] -match '^-?\d+$' -and $q['w'] -match '^\d+$' -and $q['h'] -match '^\d+$') {
-            $r=[Drawing.Rectangle]::new([int]$q['x'],[int]$q['y'],[int]$q['w'],[int]$q['h'])
+            $ran = Invoke-SnapShackleFleet -Noun 'capture' -Verb 'rect' -Arguments @{ x = [int]$q['x']; y = [int]$q['y']; w = [int]$q['w']; h = [int]$q['h']; delay = $delay } -Confirmed
+            if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+            Add-CaptureTimingHeaders $Context
+            Send-Response $Context ([byte[]]$ran.Result.png) 'image/png'; return
         }
-        $png=Get-SnapShackleRect $r
+        $screenArgs = @{ delay = $delay }
+        if ($q['screen'] -match '^\d+$') { $screenArgs.screen = [int]$q['screen'] }
+        $ran = Invoke-SnapShackleFleet -Noun 'capture' -Verb 'screen' -Arguments $screenArgs -Confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
         Add-CaptureTimingHeaders $Context
-        Send-Response $Context $png 'image/png';return
+        Send-Response $Context ([byte[]]$ran.Result.png) 'image/png'; return
     }
     if ($path -eq '/api/settings') {
-        if ($method -eq 'GET') { Send-Json $Context (Get-SnapShackleSettings $settingsPath);return }
+        if ($method -eq 'GET') {
+            $ran = Invoke-SnapShackleFleet -Noun 'settings' -Verb 'show' -Arguments @{} -Confirmed
+            Send-Json $Context $ran.Result; return
+        }
         if ($method -eq 'PUT') {
             $changes=[Text.Encoding]::UTF8.GetString((Read-Body $Context 16384)) | ConvertFrom-Json
             $saved=Set-SnapShackleSettings $settingsPath $changes
             $script:stayInTraySetting=[bool]$saved.stayInTray
-            Send-Json $Context $saved;return
+            Send-Json $Context $saved; return
         }
     }
     if ($path -eq '/api/events' -and $method -eq 'GET') {
@@ -309,48 +353,55 @@ function Invoke-SnapShackleRequest($Context) {
         if (-not (Test-SnapShackleOcr)) { Send-Json $Context @{error='Windows native OCR unsupported by this PowerShell environment'} 501;return }
         $bytes=Read-Body $Context 15000000
         Assert-Png $bytes
-        $result=Invoke-SnapShackleOcr $bytes
-        Send-Json $Context @{text=$result.text;lines=$result.lines;engine='Windows.Media.Ocr'};return
+        $ran = Invoke-SnapShackleFleet -Noun 'ocr' -Verb 'run' -Arguments @{} -PngBytes $bytes -Confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+        if ($ran.Result -is [hashtable] -and $ran.Result.ContainsKey('statusCode')) { Send-Json $Context @{error=[string]$ran.Result.error} ([int]$ran.Result.statusCode); return }
+        Send-Json $Context $ran.Result; return
     }
     if ($path -eq '/api/ai/status' -and $method -eq 'GET') {
-        Send-Json $Context (Get-SnapShackleAiStatus (Get-SnapShackleSettings $settingsPath));return
+        $ran = Invoke-SnapShackleFleet -Noun 'ai' -Verb 'status' -Arguments @{} -Confirmed
+        Send-Json $Context $ran.Result; return
     }
     if (($path -eq '/api/ai/alt-text' -or $path -eq '/api/ai/suggest') -and $method -eq 'POST') {
         $aiSettings=Get-SnapShackleSettings $settingsPath
         if (([string]$aiSettings.aiSuggest) -ne 'on') { Send-Json $Context @{error='AI suggestions are off. Turn them on under Workflows, Settings.'} 409;return }
         $bytes=Read-Body $Context 15000000
         Assert-Png $bytes
-        try {
-            if ($path -eq '/api/ai/alt-text') { Send-Json $Context (Invoke-SnapShackleAltText $bytes $aiSettings) }
-            else {
-                $ocrText=''
-                if (Test-SnapShackleOcr) { try { $ocrText=[string](Invoke-SnapShackleOcr $bytes).text } catch {} }
-                Send-Json $Context (Invoke-SnapShackleSuggest $bytes $ocrText $aiSettings)
-            }
-        } catch { Send-Json $Context @{error=$_.Exception.Message} 502 }
+        $aiVerb = $(if ($path -eq '/api/ai/alt-text') { 'describe' } else { 'suggest' })
+        $ran = Invoke-SnapShackleFleet -Noun 'ai' -Verb $aiVerb -Arguments @{} -PngBytes $bytes -Confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 502; return }
+        if ($ran.Result -is [hashtable] -and $ran.Result.ContainsKey('statusCode')) { Send-Json $Context @{error=[string]$ran.Result.error} ([int]$ran.Result.statusCode); return }
+        Send-Json $Context $ran.Result
         return
     }
     if ($path -eq '/api/share' -and $method -eq 'GET') {
-        [object[]]$destinations = Get-SnapShackleShareDestinations (Get-SnapShackleSettings $settingsPath)
-        Send-Json $Context @{destinations=$destinations};return
+        $ran = Invoke-SnapShackleFleet -Noun 'share' -Verb 'list' -Arguments @{} -Confirmed
+        Send-Json $Context $ran.Result; return
     }
     if ($path -eq '/api/share' -and $method -eq 'POST') {
         $share=[Text.Encoding]::UTF8.GetString((Read-Body $Context 16384)) | ConvertFrom-Json
-        try {
-            $result=Invoke-SnapShackleShare -Library $library -CapturePath (Get-SafeCapturePath ([string]$share.capture)) -Settings (Get-SnapShackleSettings $settingsPath) -Kind ([string]$share.kind) -Destination ([string]$share.destination)
-            Send-Json $Context $result
-        } catch { Send-Json $Context @{error=$_.Exception.Message} 400 }
+        try { $null = Get-SafeCapturePath ([string]$share.capture) } catch { Send-Json $Context @{error=$_.Exception.Message} 400; return }
+        $shareArgs = @{}
+        foreach ($shareProperty in @($share.PSObject.Properties)) { if ($null -ne $shareProperty.Value) { $shareArgs[$shareProperty.Name] = $shareProperty.Value } }
+        $ran = Invoke-SnapShackleFleet -Noun 'share' -Verb 'send' -Arguments $shareArgs -Confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+        if ($ran.Result -is [hashtable] -and $ran.Result.ContainsKey('statusCode')) { Send-Json $Context @{error=[string]$ran.Result.error} ([int]$ran.Result.statusCode); return }
+        Send-Json $Context $ran.Result
         return
     }
     if ($path -eq '/api/library' -and $method -eq 'GET') {
         # The list comes back as one array object (return ,$array); @(...) around it would nest it as
         # items:[[...]], which the studio rendered as a single broken card ("Invalid Date").
+        # Same function as snapshackle.library.list (Get-SnapShackleCaptureList). Assigned here so a
+        # one-item list stays a JSON array.
         [object[]]$items = Get-SnapShackleCaptureList $library $request.QueryString['q'] $CaptureNamePattern
         Send-Json $Context @{items=$items};return
     }
     if ($path -eq '/api/library' -and $method -eq 'POST') {
         $bytes=Read-Body $Context 25000000;Assert-Png $bytes
-        $name=Save-SnapShackleCapture $library $bytes
+        $ran = Invoke-SnapShackleFleet -Noun 'library' -Verb 'save' -Arguments @{} -PngBytes $bytes -Confirmed
+        if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+        $name = [string]$ran.Result.name
         Send-Json $Context @{name=$name}
         # After the reply has gone out: index the text in the image so the library can search it.
         $null=Update-SnapShackleOcrIndex $library $name $bytes
@@ -365,28 +416,37 @@ function Invoke-SnapShackleRequest($Context) {
     if ($path -match ('^/api/library/(' + $CaptureNamePattern + ')$')) {
         $name=$Matches[1];$capturePath=Get-SafeCapturePath $name
         if ($method -eq 'GET') {
-            if (Test-Path -LiteralPath $capturePath) { Send-Response $Context ([IO.File]::ReadAllBytes($capturePath)) 'image/png' }
-            else { Send-Json $Context @{error='Capture not found'} 404 };return
+            $ran = Invoke-SnapShackleFleet -Noun 'library' -Verb 'get' -Arguments @{ name = $name } -Confirmed
+            if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
+            if ($ran.Result -is [hashtable] -and $ran.Result.ContainsKey('statusCode')) { Send-Json $Context @{error=[string]$ran.Result.error} ([int]$ran.Result.statusCode); return }
+            Send-Response $Context ([byte[]]$ran.Result.png) 'image/png'
+            return
         }
         if (-not (Test-Path -LiteralPath $capturePath)) { Send-Json $Context @{error='Capture not found'} 404;return }
         if ($method -eq 'DELETE') {
             # A delete is acknowledged explicitly (the studio sends this after its own confirm box; the CLI after --yes).
             if ($request.Headers['X-SnapShackle-Confirm'] -ne 'yes') { Send-Json $Context @{error='Confirmation required: send X-SnapShackle-Confirm: yes (CLI: --yes)';confirm=$true} 409;return }
-            Write-SnapShackleAudit $runtimeDir 'library-delete' $name ($(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'studio' }))
-            Remove-Item -LiteralPath $capturePath
-            # Invalidate cached preview when its original is deleted.
-            if ($script:thumbnailCache.ContainsKey($name)) { [void]$script:thumbnailCache.Remove($name) }
-            Remove-Item -LiteralPath (Get-MetaPath $name) -ErrorAction SilentlyContinue
+            $source = $(if ($request.Headers['User-Agent'] -like 'SnapShackle-CLI*') { 'cli' } else { 'studio' })
+            Write-SnapShackleAudit $runtimeDir 'library-delete' $name $source
+            $ran = Invoke-SnapShackleFleet -Noun 'library' -Verb 'delete' -Arguments @{ name = $name } -SkipAudit $true -Confirmed
+            if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
             Send-Json $Context @{deleted=$true};return
         }
         if ($method -eq 'PUT') {
             $metadata=[Text.Encoding]::UTF8.GetString((Read-Body $Context 65536)) | ConvertFrom-Json
             # Merge: tags and note change, indexed OCR text is kept.
-            Set-SnapShackleMeta $library $name @{ tags=@($metadata.tags | ForEach-Object { [string]$_ }); note=[string]$metadata.note }
+            $tagList = @($metadata.tags | ForEach-Object { [string]$_ } | Where-Object { $_ })
+            $tagArgs = @{ name = $name; tags = ($tagList -join ','); note = [string]$metadata.note }
+            $ran = Invoke-SnapShackleFleet -Noun 'library' -Verb 'tag' -Arguments $tagArgs -Confirmed
+            if (-not $ran.Ok) { Send-Json $Context @{error=[string]$ran.Error} 400; return }
             Send-Json $Context @{updated=$true};return
         }
     }
     Send-Json $Context @{error='Route not found'} 404
+}
+$script:SnapShackleActionState = @{
+    Library = $library; SettingsPath = $settingsPath; RuntimeDir = $runtimeDir
+    CaptureNamePattern = $CaptureNamePattern; Version = $SnapShackleVersion; Root = $root
 }
 $base="http://127.0.0.1:$Port/"
 $shared=[hashtable]::Synchronized(@{

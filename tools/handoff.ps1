@@ -31,94 +31,18 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 . (Join-Path $root 'modules\Library.ps1')
-$script:HandoffSchema = 'snapshackle.handoff/1'
-$script:NamePattern = '(?:SnapShackle|CutterMk|Lasso|SnipHero)-[a-zA-Z0-9_.-]+\.png'
+. (Join-Path $root 'modules\Handoff.ps1')
 
-function Stop-Usage([string]$Message) { [Console]::Error.WriteLine('handoff: ' + $Message); exit 2 }
-function Stop-Failed([string]$Message) { [Console]::Error.WriteLine('handoff: ' + $Message); exit 1 }
-function Get-Sha256([string]$Path) {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try { return ((($sha.ComputeHash([IO.File]::ReadAllBytes($Path))) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() }
-}
-
-if (-not $Library) { $Library = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle\Captures' } else { Join-Path $root 'captures' } }
-if ($Max -lt 1 -or $Max -gt 250) { Stop-Usage '-Max must be between 1 and 250' }
-if (-not [IO.Directory]::Exists($Library)) { Stop-Failed ('the capture folder was not found: ' + $Library) }
-$library = [IO.Path]::GetFullPath($Library)
-$sinceDate = $null
-if ($Since) { try { $sinceDate = [datetime]::Parse($Since, [Globalization.CultureInfo]::InvariantCulture) } catch { Stop-Usage ('-Since is not a date: ' + $Since) } }
-# Under powershell -File a comma list arrives as one string, so split it here.
-$wanted = @($Name | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-foreach ($n in $wanted) { if ($n -notmatch ('^' + $script:NamePattern + '$')) { Stop-Usage ('not a capture name: ' + $n) } }
-if ($Mode -eq 'export') {
-    if (-not $OutDir) { Stop-Usage 'export needs -OutDir' }
-    $out = [IO.Path]::GetFullPath($OutDir)
-    if ($out.TrimEnd('\') -ieq $library.TrimEnd('\') -or $out.StartsWith($library.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { Stop-Usage '-OutDir must not be the capture folder or inside it' }
-}
-
-# Newest first, same rules as the library (name pattern, search over name, tags, note and OCR text).
-# The function returns one array object (return ,$array); wrapping it in @() would nest it.
-[object[]]$items = Get-SnapShackleCaptureList $library $Query $script:NamePattern
-if ($Tag) { $items = @($items | Where-Object { @($_.tags) -contains $Tag }) }
-if ($sinceDate) { $items = @($items | Where-Object { [datetime]::Parse($_.modified, [Globalization.CultureInfo]::InvariantCulture) -ge $sinceDate }) }
-if ($wanted.Count -gt 0) { $items = @($items | Where-Object { $wanted -contains $_.name }) }
-$items = @($items | Select-Object -First $Max)
-
-$entries = foreach ($item in $items) {
-    $meta = Get-SnapShackleMeta $library $item.name
-    $png = Join-Path $library $item.name
-    $entry = [ordered]@{
-        name = $item.name; file = $item.name; bytes = [long]$item.bytes; modified = $item.modified
-        sha256 = (Get-Sha256 $png); tags = @($meta.tags); note = [string]$meta.note
-        sidecar = [IO.File]::Exists((Get-SnapShackleMetaPath $library $item.name)); ocrChars = ([string]$meta.ocr).Length
-    }
-    if ($IncludeText) { $entry.ocr = [string]$meta.ocr }
-    $entry
-}
-$entries = @($entries)
-
-if ($Mode -eq 'list') {
-    if ($Json) {
-        ConvertTo-Json -InputObject ([ordered]@{ schema = $script:HandoffSchema; source = 'SnapShackle'; count = $entries.Count; captures = $entries }) -Depth 6
-    } else {
-        if ($entries.Count -eq 0) { Write-Host 'No captures match.' }
-        else { $entries | ForEach-Object { '{0}  {1,9} bytes  {2}  tags: {3}  text: {4} chars' -f $_.name, $_.bytes, $_.modified.Substring(0, 19), (@($_.tags) -join ','), $_.ocrChars } }
+$result = Invoke-SnapShackleHandoff -Mode $Mode -Library $Library -OutDir $OutDir -Query $Query -Tag $Tag -Since $Since -Name $Name -Max $Max -IncludeText:([bool]$IncludeText) -DryRun:([bool]$DryRun) -Root $root
+if (-not $result.Ok) { [Console]::Error.WriteLine('handoff: ' + $result.Error); exit $result.Exit }
+if ($result.Mode -eq 'list') {
+    if ($Json) { ConvertTo-Json -InputObject $result.Document -Depth 6 }
+    else {
+        if (@($result.Entries).Count -eq 0) { Write-Host 'No captures match.' }
+        else { $result.Entries | ForEach-Object { '{0}  {1,9} bytes  {2}  tags: {3}  text: {4} chars' -f $_.name, $_.bytes, $_.modified.Substring(0, 19), (@($_.tags) -join ','), $_.ocrChars } }
     }
     exit 0
 }
-
-# export
-$copied = New-Object System.Collections.Generic.List[object]
-$skipped = New-Object System.Collections.Generic.List[object]
-$manifestPath = Join-Path $out 'handoff.json'
-# An earlier export into this folder keeps its entries (hashes, tags, text): this run only adds its own captures.
-$earlier = @()
-$createdAt = (Get-Date).ToString('o')
-if ([IO.File]::Exists($manifestPath)) {
-    try { $old = [IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json } catch { $old = $null }
-    if (-not $old -or $old.schema -ne $script:HandoffSchema) { Stop-Failed ('handoff.json in the output folder is not a hand-off manifest; nothing was copied: ' + $manifestPath) }
-    $earlier = @($old.captures | Where-Object { $_ })
-    if ($old.createdAt) { $createdAt = [string]$old.createdAt }
-}
-if (-not $DryRun) { [void][IO.Directory]::CreateDirectory($out) }
-foreach ($e in $entries) {
-    $target = Join-Path $out $e.name
-    if ([IO.File]::Exists($target)) { $skipped.Add([ordered]@{ name = $e.name; reason = 'a file with that name is already in the output folder' }); continue }
-    if (-not $DryRun) {
-        [IO.File]::Copy((Join-Path $library $e.name), $target, $false)
-        if ($e.sidecar) { [IO.File]::Copy((Get-SnapShackleMetaPath $library $e.name), ($target + '.meta.json'), $false) }
-    }
-    $copied.Add($e)
-}
-$copiedNames = @($copied | ForEach-Object { $_.name })
-$listed = @(@($earlier | Where-Object { $copiedNames -notcontains $_.name }) + $copied.ToArray())
-# skipped is about this run only; a skipped file keeps the entry an earlier run wrote for it.
-$manifest = [ordered]@{ schema = $script:HandoffSchema; source = 'SnapShackle'; createdAt = $createdAt; updatedAt = (Get-Date).ToString('o'); count = $listed.Count; captures = $listed; skipped = $skipped.ToArray() }
-if (-not $DryRun) {
-    $tmp = $manifestPath + '.tmp'
-    [IO.File]::WriteAllText($tmp, (ConvertTo-Json -InputObject $manifest -Depth 6), [Text.UTF8Encoding]::new($false))
-    if ([IO.File]::Exists($manifestPath)) { $bak = $manifestPath + '.bak'; [IO.File]::Replace($tmp, $manifestPath, $bak); [IO.File]::Delete($bak) } else { [IO.File]::Move($tmp, $manifestPath) }
-}
-if ($Json) { ConvertTo-Json -InputObject (@{ dryRun = [bool]$DryRun; copied = $copied.Count; skipped = $skipped.Count; manifest = $(if ($DryRun) { $null } else { 'handoff.json' }) }) -Compress }
-else { Write-Host ($(if ($DryRun) { 'Would copy ' } else { 'Copied ' }) + $copied.Count + ' capture(s) to ' + $out + '; skipped ' + $skipped.Count + '.') }
+if ($Json) { ConvertTo-Json -InputObject $result.Summary -Compress }
+else { Write-Host ($(if ($result.DryRun) { 'Would copy ' } else { 'Copied ' }) + $result.Copied + ' capture(s) to ' + $result.OutDir + '; skipped ' + $result.Skipped + '.') }
 exit 0

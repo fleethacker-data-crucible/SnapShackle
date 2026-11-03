@@ -47,6 +47,18 @@ jobs:
           $ErrorActionPreference = 'Continue'
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\windows_ocr_test.ps1
           if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
+      - name: Fleet actions (Pester 5, Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $have = @(Get-Module -ListAvailable Pester | Where-Object { $_.Version.Major -eq 5 })
+          if ($have.Count -eq 0) {
+            Write-Host 'Pester 5 is not already on this runner. Skipping Fleet action tests. Nothing is installed.'
+            exit 0
+          }
+          Import-Module Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -ExecutionPolicy Bypass -Command "Import-Module Pester -MinimumVersion 5.0.0 -MaximumVersion 5.99.99; Invoke-Pester -Path tests\FleetAction.Tests.ps1 -CI"
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }
       - name: CLI and API parity (offline)
         shell: powershell
         run: |

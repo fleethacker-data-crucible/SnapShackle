@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','tools/handoff.ps1','docs/HANDOFF.md','tests/handoff_test.ps1','docs/DEMO-WALKTHROUGH.md','tests/data_dir_test.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','tools/handoff.ps1','docs/HANDOFF.md','tests/handoff_test.ps1','docs/DEMO-WALKTHROUGH.md','tests/data_dir_test.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','docs/CLI-API.md','modules/Actions.ps1','modules/Handoff.ps1','modules/CliClient.ps1','vendor/FleetAction/FleetAction.psm1','vendor/FleetAction/fleet-action.lock.json','examples/training-course-handoff.json','tests/FleetAction.Tests.ps1','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -78,7 +78,8 @@ assert "recordAudio = 'off'" in library and 'recordMicId' in library
 assert 'http://' not in audio and 'https://' not in audio and '.mil' not in audio
 assert 'normalizeMode' in audio and 'prepareRecording' in audio
 share=(ROOT/'modules/Share.ps1').read_text(encoding='utf-8')
-assert "/api/share" in host and 'Invoke-SnapShackleShare' in host and 'Get-SafeCapturePath ([string]$share.capture)' in host, 'share route must validate the capture name'
+actions=(ROOT/'modules/Actions.ps1').read_text(encoding='utf-8')
+assert "/api/share" in host and 'Invoke-SnapShackleShare' in actions and 'Get-SafeCapturePath ([string]$share.capture)' in host, 'share route must validate the capture name'
 assert 'id="shareDestination"' in ui and 'for="shareDestination"' in ui and 'id="shareFolders"' in ui and 'for="shareFolders"' in ui
 assert 'Invoke-WebRequest' not in share and 'WebClient' not in share and 'Invoke-RestMethod' not in share and 'http://' not in share and 'https://' not in share, 'sharing must stay local'
 assert '$false)' in share and 'File]::Copy' in share, 'folder copies must never overwrite'
@@ -96,10 +97,11 @@ assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
 handoff=(ROOT/'tools/handoff.ps1').read_text(encoding='utf-8')
 assert all(x not in handoff for x in ('Invoke-WebRequest', 'Invoke-RestMethod', 'WebClient', 'http://', 'https://')), 'the hand-off helper must stay local'
-assert 'Remove-Item' not in handoff and 'File]::Delete($target' not in handoff and '[IO.File]::Copy((Join-Path $library $e.name), $target, $false)' in handoff, 'the hand-off helper must never overwrite or delete captures'
+handoff_body=(ROOT/'modules/Handoff.ps1').read_text(encoding='utf-8')
+assert 'Remove-Item' not in handoff and 'File]::Delete($target' not in handoff and '[IO.File]::Copy((Join-Path $library $e.name), $target, $false)' in handoff_body, 'the hand-off helper must never overwrite or delete captures'
 print('PASS: the hand-off helper stays local and never overwrites or deletes')
 start=(ROOT/'Start-SnapShackle.ps1').read_text(encoding='utf-8'); demo=(ROOT/'docs/DEMO-WALKTHROUGH.md').read_text(encoding='utf-8')
-assert '[string]$DataDir' in start and 'Set-SnapShackleDataRoot' in start and 'customDataDir' in start, 'Start-SnapShackle must support a data folder'
+assert '[string]$DataDir' in start and 'Set-SnapShackleDataRoot' in start and ('customDataDir' in start or 'customDataDir' in (ROOT/'modules/Actions.ps1').read_text(encoding='utf-8')), 'Start-SnapShackle must support a data folder'
 assert '--data-dir' in demo and 'evidence-capture.ps1' in demo and 'End session' in demo, 'the demo walkthrough must use a data folder and the synthetic windows'
 print('PASS: a run can use its own data folder, and the demo walkthrough uses it')
 assert 'id="layerAnnounce"' in ui and 'aria-live="polite"' in ui.split('id="layerAnnounce"')[1].split('>')[0] and 'role="group" aria-label="Layers"' in ui

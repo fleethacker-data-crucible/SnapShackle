@@ -58,6 +58,29 @@ $script:SnapShackleCommands = @(
         (New-SnapShackleOption 'file' 'file' $false 'local' 'JSON file of preferences.')) 'json' 'json' $false @('settingsSave'))
     (New-SnapShackleCommand 'session stop' 'Stop SnapShackle, its tray icon and hotkeys. Needs --yes.' 'POST' '/api/session/stop' @() 'none' 'json' $true @('endSession'))
     (New-SnapShackleCommand 'commands list' 'This list: every command, its route and options.' 'GET' '/api/commands' @() 'none' 'json')
+    (New-SnapShackleCommand 'handoff list' 'List captures for Bowerbird, Capstan and Scrimshaw. Reads the capture folder; SnapShackle does not have to be running.' '' '' @(
+        (New-SnapShackleOption 'query' 'string' $false 'local' 'Search names, tags, notes and text in the images.'),
+        (New-SnapShackleOption 'tag' 'string' $false 'local' 'Only captures with this tag.'),
+        (New-SnapShackleOption 'since' 'string' $false 'local' 'Only captures modified on or after this date.'),
+        (New-SnapShackleOption 'name' 'string' $false 'local' 'One capture name, or several separated by commas.'),
+        (New-SnapShackleOption 'max' 'int' $false 'local' 'Most captures to return, 1 to 250.'),
+        (New-SnapShackleOption 'includetext' 'bool' $false 'local' 'Include OCR text. true or false.'),
+        (New-SnapShackleOption 'library' 'string' $false 'local' 'Capture folder. Default is the SnapShackle library.')) 'none' 'json' $false @() 'local')
+    (New-SnapShackleCommand 'handoff export' 'Copy captures and a handoff.json manifest into a folder for Capstan and Scrimshaw. Never overwrites a file.' '' '' @(
+        (New-SnapShackleOption 'query' 'string' $false 'local' 'Search names, tags, notes and text in the images.'),
+        (New-SnapShackleOption 'tag' 'string' $false 'local' 'Only captures with this tag.'),
+        (New-SnapShackleOption 'since' 'string' $false 'local' 'Only captures modified on or after this date.'),
+        (New-SnapShackleOption 'name' 'string' $false 'local' 'One capture name, or several separated by commas.'),
+        (New-SnapShackleOption 'max' 'int' $false 'local' 'Most captures to copy, 1 to 250.'),
+        (New-SnapShackleOption 'includetext' 'bool' $false 'local' 'Put OCR text in the manifest.'),
+        (New-SnapShackleOption 'library' 'string' $false 'local' 'Capture folder.'),
+        (New-SnapShackleOption 'outdir' 'string' $true 'local' 'Folder that receives the copies and handoff.json.'),
+        (New-SnapShackleOption 'dryrun' 'bool' $false 'local' 'Report what would be copied and write nothing.')) 'none' 'json' $false @() 'local')
+    (New-SnapShackleCommand 'evidence run' 'Draw the synthetic windows in a manifest, capture them, and redact. Needs Windows, an interactive desktop, and --yes because files in the output folder are replaced.' '' '' @(
+        (New-SnapShackleOption 'manifest' 'file' $true 'local' 'JSON manifest of synthetic windows.'),
+        (New-SnapShackleOption 'outdir' 'string' $true 'local' 'Folder for the PNGs and evidence-index.json.'),
+        (New-SnapShackleOption 'keepraw' 'bool' $false 'local' 'Also keep the unredacted PNG.'),
+        (New-SnapShackleOption 'skipredact' 'bool' $false 'local' 'Capture only, with no OCR.')) 'none' 'json' $true @() 'local')
 )
 # Studio buttons and controls that are not commands, each with the reason. A new button must be in a command's gui list or here.
 $script:SnapShackleGuiOnly = [ordered]@{
@@ -78,10 +101,20 @@ $script:SnapShackleGuiOnly = [ordered]@{
     voiceRecord = 'Browser microphone permission prompt and the annotation editor'; voicePlay = 'Plays the clip in the browser'; voiceSave = 'Browser download of the clip on the selected annotation'; voiceDelete = 'Annotation editor'
     aiAltCopy = 'Clipboard of the browser page'; aiAltNote = 'Fills the note field of the open image (library tag sets a note)'; aiApply = 'Annotation editor: adds the ticked suggestions to the open image'
     recordCameraRefresh = 'Browser camera permission prompt'
+    confirmCancel = 'Dismisses the confirm dialog. Cancel is the default, so Enter does not run the action.'
+    confirmAccept = 'Confirms the dialog. The button that opened it then runs its action.'
 }
 
 function Get-SnapShackleCommandsDocument {
-    return [ordered]@{ schema = $script:SnapShackleCommandsSchema; commands = @($script:SnapShackleCommands) }
+    $commands = foreach ($command in @($script:SnapShackleCommands)) {
+        $copy = [ordered]@{}
+        foreach ($key in @($command.Keys)) { $copy[$key] = $command[$key] }
+        $parts = @([string]$command.name -split ' ')
+        $copy.id = 'snapshackle.' + $parts[0] + '.' + $parts[1]
+        if (Get-Command ConvertTo-SnapShackleArgsSchema -ErrorAction SilentlyContinue) { $copy.argsSchema = ConvertTo-SnapShackleArgsSchema $command }
+        $copy
+    }
+    return [ordered]@{ schema = $script:SnapShackleCommandsSchema; discovery = 'commands --json'; helpAlias = 'help --json'; commands = @($commands) }
 }
 
 # --- Per-session token file for the CLI (Fleet CLI parity requirement 9) -------------------------------------------

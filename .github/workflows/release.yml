@@ -24,7 +24,7 @@ jobs:
           # README emblems; the app never loads them, so they stay out of the zip.
           # CutterMk.bat forwards to Launch-SnapShackle.bat, so shortcuts made before the rename (and a
           # zip unpacked over a CutterMk folder) start the new host instead of the old Start-CutterMk.ps1.
-          foreach ($item in 'Launch-SnapShackle.bat','SnapShackle-CLI.bat','snapshackle.ps1','CutterMk.bat','Start-SnapShackle.ps1','Stop-SnapShackle.ps1','VERSION','index.html','README.md','assets','modules') {
+          foreach ($item in 'Launch-SnapShackle.bat','SnapShackle-CLI.bat','snapshackle.ps1','CutterMk.bat','Start-SnapShackle.ps1','Stop-SnapShackle.ps1','VERSION','index.html','README.md','assets','modules','vendor') {
             Copy-Item $item -Destination $stage -Recurse
           }
           $brand = Join-Path $stage 'assets\brand'

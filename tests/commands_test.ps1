@@ -29,6 +29,8 @@ $internal = @{
     '/api/events' = 'hotkey captures handed to the open studio'
     '/api/thumb' = 'thumbnails for the studio library list'
     '/api/region' = 'interactive selection overlay, needs a person; capture rect is the headless form'
+    '/api/actions' = 'Fleet action catalog; the same functions as the named routes'
+    '/api/actions/(snapshackle\.[a-z]+\.[a-z]+)$' = 'Fleet action dispatch; calls the registered function for that id'
 }
 function ConvertTo-RouteKey([string]$Route) {
     $r = ($Route -replace '\?.*$', '').TrimStart('^')
@@ -70,7 +72,7 @@ Test-Case 'the registry is well formed: unique <noun> <verb> names, known kinds,
         Assert-True ($c.method -in @('', 'GET', 'POST', 'PUT', 'DELETE')) ('method: ' + $c.name)
         Assert-True ($c.kind -eq 'local' -or $c.route) ('api command without a route: ' + $c.name)
         foreach ($o in @($c.options)) {
-            Assert-True ($o.type -in @('string', 'int', 'file')) ("option type: $($c.name) --$($o.name)")
+            Assert-True ($o.type -in @('string', 'int', 'file', 'bool')) ("option type: $($c.name) --$($o.name)")
             Assert-True ($o.in -in @('query', 'path', 'body', 'local')) ("option location: $($c.name) --$($o.name)")
             Assert-True ($o.name -notmatch 'token|password|secret|key$' -or $o.name -eq 'key') ("an option that looks like a secret: --$($o.name)")
         }

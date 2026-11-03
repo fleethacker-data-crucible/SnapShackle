@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "steps": [
+    {
+      "id": "list",
+      "app": "snapshackle",
+      "noun": "handoff",
+      "verb": "list",
+      "args": {
+        "library": "C:\\Fleet\\SnapShackle\\Captures",
+        "tag": "training",
+        "query": "course",
+        "includetext": true
+      }
+    },
+    {
+      "id": "export",
+      "app": "snapshackle",
+      "noun": "handoff",
+      "verb": "export",
+      "args": {
+        "library": "C:\\Fleet\\SnapShackle\\Captures",
+        "tag": "training",
+        "query": "course",
+        "outdir": "C:\\Fleet\\course-captures",
+        "includetext": true,
+        "dryrun": true
+      }
+    }
+  ]
+}
