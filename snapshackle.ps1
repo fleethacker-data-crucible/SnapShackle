@@ -166,6 +166,12 @@ foreach ($spec in @($cmd.options)) {
 
 $id = 'snapshackle.' + (($name -split ' ') -join '.')
 $actionContext = @{ Transport = 'cli'; Root = $root; Command = $cmd }
-$ran = Invoke-FleetAction -Id $id -Arguments $opts -Context $actionContext -Confirmed:([bool]$flags['yes']) -DryRun:$false
+# --out on a JSON command is the result file, not an action argument.
+$actionArgs = @{}
+foreach ($key in @($opts.Keys)) {
+    if ($key -eq 'out' -and $cmd.response -ne 'png') { continue }
+    $actionArgs[$key] = $opts[$key]
+}
+$ran = Invoke-FleetAction -Id $id -Arguments $actionArgs -Context $actionContext -Confirmed:([bool]$flags['yes']) -DryRun:$false
 if (-not $ran.Ok) { Write-Result $name $false $null $ran.Error $ran.ErrorType $ran.Exit }
 Write-Result $name $true $ran.Result '' '' 0
