@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','docs/DEMO-WALKTHROUGH.md','tests/data_dir_test.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','tools/handoff.ps1','docs/HANDOFF.md','tests/handoff_test.ps1','docs/DEMO-WALKTHROUGH.md','tests/data_dir_test.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -94,6 +94,10 @@ print('PASS: camera picture-in-picture is off by default, local only, and wired 
 assert 'id="recordFormat"' in ui and 'for="recordFormat"' in ui and 'value="mp4"' in ui and 'aria-describedby="recordFormatHelp"' in ui
 assert 'pickRecorderType' in studio and 'downloadName(pick.ext)' in studio and "recordFormat='webm'" not in studio
 assert "recordFormat = 'webm'" in library and "'webm', 'mp4'" in library
+handoff=(ROOT/'tools/handoff.ps1').read_text(encoding='utf-8')
+assert all(x not in handoff for x in ('Invoke-WebRequest', 'Invoke-RestMethod', 'WebClient', 'http://', 'https://')), 'the hand-off helper must stay local'
+assert 'Remove-Item' not in handoff and 'File]::Delete($target' not in handoff and '[IO.File]::Copy((Join-Path $library $e.name), $target, $false)' in handoff, 'the hand-off helper must never overwrite or delete captures'
+print('PASS: the hand-off helper stays local and never overwrites or deletes')
 start=(ROOT/'Start-SnapShackle.ps1').read_text(encoding='utf-8'); demo=(ROOT/'docs/DEMO-WALKTHROUGH.md').read_text(encoding='utf-8')
 assert '[string]$DataDir' in start and 'Set-SnapShackleDataRoot' in start and 'customDataDir' in start, 'Start-SnapShackle must support a data folder'
 assert '--data-dir' in demo and 'evidence-capture.ps1' in demo and 'End session' in demo, 'the demo walkthrough must use a data folder and the synthetic windows'

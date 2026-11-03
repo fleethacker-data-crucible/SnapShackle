@@ -79,6 +79,12 @@ jobs:
           $ErrorActionPreference = 'Continue'
           & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File tests\share_api_test.ps1
           if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }   # also catches a command that never ran
+      - name: Hand-off helper (synthetic capture folder)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NoLogo -ExecutionPolicy Bypass -File tests\handoff_test.ps1
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }
       - name: Own data folder (real host, temporary folders)
         shell: powershell
         run: |
