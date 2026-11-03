@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   package:
-    runs-on: [self-hosted, Windows, win11]
+    runs-on: [self-hosted, Windows, win11, interactive]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Build SnapShackle-<version>.zip (runtime files only)
