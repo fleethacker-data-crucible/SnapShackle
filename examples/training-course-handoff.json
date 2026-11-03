@@ -1,0 +1,26 @@
+{
+  "schema": "fleet.action.job/1",
+  "title": "Hand training captures to Capstan and Scrimshaw",
+  "steps": [
+    {
+      "action": "snapshackle.handoff.list",
+      "args": {
+        "library": "C:\\Fleet\\SnapShackle\\Captures",
+        "tag": "training",
+        "query": "course",
+        "includetext": true
+      }
+    },
+    {
+      "action": "snapshackle.handoff.export",
+      "args": {
+        "library": "C:\\Fleet\\SnapShackle\\Captures",
+        "tag": "training",
+        "query": "course",
+        "outdir": "C:\\Fleet\\course-captures",
+        "includetext": true,
+        "dryrun": true
+      }
+    }
+  ]
+}

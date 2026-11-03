@@ -1,13 +1,14 @@
 <#
-  SnapShackle command line (Fleet CLI parity): every action that has a command here is also a route of the local API,
-  and both come from one registry (modules/Cli.ps1). Run through SnapShackle-CLI.bat or:
+  SnapShackle command line. Every action is <noun> <verb> (id snapshackle.<noun>.<verb>) and the GUI, this CLI
+  and the local API call the same function (modules/Actions.ps1, Fleet action registry).
     powershell -NoProfile -ExecutionPolicy Bypass -File snapshackle.ps1 <noun> <verb> [--option value ...] [--json] [--out file] [--yes] [--dry-run]
-  snapshackle commands            list every command (add --json for the machine-readable document)
-  snapshackle app start           start SnapShackle headless, then run any other command against it
+    powershell -NoProfile -ExecutionPolicy Bypass -File snapshackle.ps1 commands --json
+    powershell -NoProfile -ExecutionPolicy Bypass -File snapshackle.ps1 --job examples\training-course-handoff.json
+  commands --json is the discovery document. help --json prints the same document.
   Exit codes: 0 success, 1 the command failed, 2 usage error, 3 SnapShackle is not running.
-  Nothing waits on a dialog. Destructive commands (library delete, session stop) need --yes.
+  Nothing waits on a dialog. Destructive actions (library delete, session stop, evidence run) need --yes, which is -Confirmed.
   The session token comes from %LOCALAPPDATA%\SnapShackle\api-session.json (readable only by you); it is never printed,
-  never taken on the command line, and never part of --dry-run output.
+  never taken on the command line, and never part of --dry-run output. Job files are JSON only.
 #>
 # No param block: any [Parameter()] makes the script an advanced function and --out would then match the common parameter
 # -OutVariable/-OutBuffer ("ambiguous"). The arguments come from the automatic $args instead.
@@ -16,6 +17,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $root 'modules/Cli.ps1')
 . (Join-Path $root 'modules/Lifecycle.ps1')
+. (Join-Path $root 'modules/Actions.ps1')
 $ResultSchema = 'snapshackle.result/1'
 $FlagNames = @('json', 'yes', 'dry-run', 'help')
 
@@ -26,6 +28,7 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) { [IO.File]::WriteAllText
 $positional = [Collections.Generic.List[string]]::new()
 $opts = @{}
 $dataDirArg = $null
+$jobPath = $null
 $flags = @{}
 for ($i = 0; $i -lt @($Rest).Count; $i++) {
     $a = [string]$Rest[$i]
@@ -33,7 +36,24 @@ for ($i = 0; $i -lt @($Rest).Count; $i++) {
         $n = $a.Substring(2).ToLowerInvariant()
         # --data-dir <folder>: talk to the SnapShackle (or start the one) that keeps its data there (see Start-SnapShackle.ps1 -DataDir).
         if ($n -eq 'data-dir') { if ($i + 1 -lt @($Rest).Count) { $dataDirArg = [string]$Rest[++$i] }; continue }
+        if ($n -eq 'job') { if ($i + 1 -lt @($Rest).Count) { $jobPath = [string]$Rest[++$i] }; continue }
         if ($FlagNames -contains $n) { $flags[$n] = $true; continue }
+        $optType = 'string'
+        if ($positional.Count -ge 2) {
+            $peek = $positional[0] + ' ' + $positional[1]
+            $peekCmd = @($script:SnapShackleCommands | Where-Object { $_.name -eq $peek } | Select-Object -First 1)
+            if ($peekCmd.Count -eq 1) {
+                $peekSpec = @($peekCmd[0].options) | Where-Object { $_.name -eq $n } | Select-Object -First 1
+                if ($peekSpec) { $optType = [string]$peekSpec.type }
+            }
+        }
+        if ($optType -eq 'bool') {
+            $next = $null
+            if ($i + 1 -lt @($Rest).Count) { $next = [string]$Rest[$i + 1] }
+            if ($next -eq 'true' -or $next -eq 'false') { $opts[$n] = ($next -eq 'true'); $i++; continue }
+            $opts[$n] = $true
+            continue
+        }
         if ($i + 1 -ge @($Rest).Count) { $opts[$n] = $null; continue }
         $opts[$n] = [string]$Rest[++$i]
     } else { $positional.Add($a) }
@@ -53,6 +73,13 @@ function Write-Result([string]$Command, [bool]$Ok, $Result, [string]$ErrorText, 
 function Stop-Usage([string]$Command, [string]$Message) { Write-Result $Command $false $null ($Message + ' (try: snapshackle commands)') 'usage' 2 }
 # A data folder of its own (--data-dir, or SNAPSHACKLE_DATA_DIR): every path below, and a SnapShackle started by app start, follows it.
 try { [void](Set-SnapShackleDataRoot $dataDirArg) } catch { Stop-Usage 'snapshackle' $_.Exception.Message }
+
+if ($jobPath) {
+    $jobContext = @{ Transport = 'cli'; Root = $root }
+    $job = Invoke-FleetActionJob -Path $jobPath -Context $jobContext -Confirmed:([bool]$flags['yes']) -DryRun:([bool]$flags['dry-run'])
+    if (-not $job.Ok) { Write-Result ('job ' + $jobPath) $false $null $job.Error $job.ErrorType $job.Exit }
+    Write-Result ('job ' + $jobPath) $true $job.Result '' '' 0
+}
 
 # --- listing --------------------------------------------------------------------------------------------------------
 $commands = @($script:SnapShackleCommands)
@@ -132,85 +159,13 @@ if ($flags['dry-run']) {
     Write-Result $name $true $preview '' '' 0
 }
 
-# --- session --------------------------------------------------------------------------------------------------------
-function Get-Session {
-    $dir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'SnapShackle' } else { Join-Path $root 'captures' }
-    $path = Get-SnapShackleSessionFilePath $dir
-    if (-not [IO.File]::Exists($path)) { return $null }
-    try { $s = [IO.File]::ReadAllText($path) | ConvertFrom-Json } catch { return $null }
-    if (-not (Get-Process -Id ([int]$s.pid) -ErrorAction SilentlyContinue)) { return $null }
-    return $s
-}
-function Invoke-Api([string]$Method, [string]$Path, [string]$Token, [int]$Port, [byte[]]$Body, [string]$ContentType, [hashtable]$Headers = @{}) {
-    $req = [Net.HttpWebRequest]::Create('http://127.0.0.1:' + $Port + $Path)
-    $req.Method = $Method; $req.Proxy = $null; $req.Timeout = 60000; $req.KeepAlive = $false; $req.ServicePoint.Expect100Continue = $false
-    $req.UserAgent = 'SnapShackle-CLI'
-    $req.Headers.Add('X-SnapShackle-Token', $Token)
-    foreach ($h in $Headers.Keys) { $req.Headers.Add($h, [string]$Headers[$h]) }
-    if ($null -eq $Body -and $Method -ne 'GET') { $req.ContentLength = 0 }
-    if ($null -ne $Body) { $req.ContentType = $ContentType; $req.ContentLength = $Body.Length; $s = $req.GetRequestStream(); $s.Write($Body, 0, $Body.Length); $s.Close() }
-    try { $resp = $req.GetResponse() } catch [Net.WebException] { $resp = $_.Exception.Response; if ($null -eq $resp) { throw } }
-    $ms = [IO.MemoryStream]::new(); $rs = $resp.GetResponseStream(); $rs.CopyTo($ms); $rs.Close()
-    $out = [pscustomobject]@{ Status = [int]$resp.StatusCode; Bytes = $ms.ToArray(); Type = [string]$resp.ContentType }
-    $resp.Close(); $ms.Dispose()
-    return $out
-}
-function ConvertFrom-ApiBytes([byte[]]$Bytes) { try { return ([Text.Encoding]::UTF8.GetString($Bytes) | ConvertFrom-Json) } catch { return $null } }
-
-if ($name -eq 'app start') {
-    if ($null -ne (Get-Session)) { $s = Get-Session; Write-Result $name $true ([ordered]@{ started = $false; alreadyRunning = $true; port = [int]$s.port; pid = [int]$s.pid }) '' '' 0 }
-    $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $args2 = '-NoProfile -NoLogo -STA -ExecutionPolicy Bypass -File "' + (Join-Path $root 'Start-SnapShackle.ps1') + '" -NoBrowser -NoTray -Replace'
-    if ($opts.ContainsKey('port')) { $args2 += ' -Port ' + [int]$opts['port'] }
-    $env:SNAPSHACKLE_AUTO_STOP = '0'
-    $p = Start-Process -FilePath $psExe -ArgumentList $args2 -WindowStyle Hidden -PassThru
-    for ($i = 0; $i -lt 150; $i++) {
-        Start-Sleep -Milliseconds 200
-        $s = Get-Session
-        if ($null -ne $s) {
-            try { $r = Invoke-Api 'GET' '/api/health' ([string]$s.token) ([int]$s.port) $null ''; if ($r.Status -eq 200) { Write-Result $name $true ([ordered]@{ started = $true; port = [int]$s.port; pid = [int]$s.pid }) '' '' 0 } } catch {}
-        }
-        if ($p.HasExited) { Write-Result $name $false $null 'SnapShackle exited while starting (run Launch-SnapShackle.bat to see why)' 'failed' 1 }
-    }
-    Write-Result $name $false $null 'SnapShackle did not answer within 30 seconds' 'failed' 1
+# Coerce whole numbers before the action schema sees them. Bool flags are already booleans.
+foreach ($spec in @($cmd.options)) {
+    if ($spec.type -eq 'int' -and $opts.ContainsKey($spec.name)) { $opts[$spec.name] = [int]$opts[$spec.name] }
 }
 
-$session = Get-Session
-if ($null -eq $session) { Write-Result $name $false $null 'SnapShackle is not running. Start it with: snapshackle app start' 'notrunning' 3 }
-$token = [string]$session.token; $port = [int]$session.port
-
-# Request body.
-$bytes = $null; $ctype = ''
-if ($cmd.request -eq 'png') {
-    if ($opts.ContainsKey('name')) {
-        $got = Invoke-Api 'GET' ('/api/library/' + [Uri]::EscapeDataString([string]$opts['name'])) $token $port $null ''
-        if ($got.Status -ne 200) { Write-Result $name $false $null (('Capture not found: ' + $opts['name'])) 'failed' 1 }
-        $bytes = $got.Bytes
-    } else { $bytes = [IO.File]::ReadAllBytes([string]$opts['file']) }
-    $ctype = 'image/png'
-} elseif ($null -ne $bodyObject) {
-    $bytes = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $bodyObject -Depth 8 -Compress)); $ctype = 'application/json'
-}
-$headers = @{}
-if ($cmd.destructive -and $flags['yes']) { $headers['X-SnapShackle-Confirm'] = 'yes' }
-if ($name -eq 'session stop') { $headers['X-SnapShackle-Intent'] = 'end-session' }
-if ($name -eq 'session stop' -and $cmd.method -eq 'POST' -and $null -eq $bytes) { $bytes = [byte[]]@(); $ctype = 'application/json' }
-
-try { $r = Invoke-Api $cmd.method $route $token $port $bytes $ctype $headers }
-catch { Write-Result $name $false $null ('Could not reach SnapShackle: ' + $_.Exception.Message) 'notrunning' 3 }
-if ($r.Status -lt 200 -or $r.Status -ge 300) {
-    $err = ConvertFrom-ApiBytes $r.Bytes
-    $msg = if ($err -and $err.error) { [string]$err.error } else { 'HTTP ' + $r.Status }
-    Write-Result $name $false $null $msg 'failed' 1
-}
-if ($cmd.response -eq 'png') {
-    $outPath = [string]$opts['out']
-    if ($r.Bytes.Length -lt 8 -or $r.Bytes[0] -ne 137 -or $r.Bytes[1] -ne 80) { Write-Result $name $false $null 'SnapShackle did not return a PNG' 'failed' 1 }
-    [IO.File]::WriteAllBytes($outPath, $r.Bytes)
-    $sha = [Security.Cryptography.SHA256]::Create()
-    $hash = (($sha.ComputeHash($r.Bytes) | ForEach-Object { $_.ToString('x2') }) -join ''); $sha.Dispose()
-    Write-Result $name $true ([ordered]@{ file = $outPath; bytes = $r.Bytes.Length; sha256 = $hash }) '' '' 0
-}
-$data = ConvertFrom-ApiBytes $r.Bytes
-if ($name -eq 'session stop') { $data = [ordered]@{ stopped = $true } }
-Write-Result $name $true $data '' '' 0
+$id = 'snapshackle.' + (($name -split ' ') -join '.')
+$actionContext = @{ Transport = 'cli'; Root = $root; Command = $cmd }
+$ran = Invoke-FleetAction -Id $id -Arguments $opts -Context $actionContext -Confirmed:([bool]$flags['yes']) -DryRun:$false
+if (-not $ran.Ok) { Write-Result $name $false $null $ran.Error $ran.ErrorType $ran.Exit }
+Write-Result $name $true $ran.Result '' '' 0

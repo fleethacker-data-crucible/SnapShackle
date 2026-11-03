@@ -1,6 +1,6 @@
 # SnapShackle CLI and API
 
-SnapShackle follows the Fleet CLI parity proposal (`proposals/cli-parity/` in the comms repo): the actions that make sense without a person at the screen have a named command, and the CLI and the local API come from the same registry, so neither can do something the other can't. No new install: the CLI is a script and a `.bat`, like the studio.
+SnapShackle follows the Fleet action standard: every command is `<noun> <verb>` (id `snapshackle.<noun>.<verb>`), discovery is `commands --json` (`help --json` is the same document), and the GUI, the CLI and the local API call one function. The full action list, with a JSON job and a curl call for each, is [CLI-API.md](CLI-API.md). No new install: the CLI is a script and a `.bat`, like the studio.
 
 ```bat
 SnapShackle-CLI.bat commands

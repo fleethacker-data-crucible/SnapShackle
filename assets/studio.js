@@ -28,7 +28,43 @@ settings.shareFolders=Array.isArray(settings.shareFolders)?settings.shareFolders
 settings.recordCamera=SnapShackleWebcam.normalizeMode(settings.recordCamera);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner(settings.recordCameraCorner);settings.recordCameraSize=SnapShackleWebcam.normalizeSize(settings.recordCameraSize);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId(settings.recordCameraId);
 settings.recordFormat=SnapShackleAudio.normalizeFormat(settings.recordFormat);
 function notify(message){$('#status').textContent=message}
-function fail(error){console.error('[SnapShackle]',error);notify('⚠ '+(error?.message||error))}
+function readableError(error){
+  let text=error&&error.message?String(error.message):String(error||'Something went wrong.');
+  text=text.replace(/Bearer\s+\S+/gi,'Bearer [redacted]');
+  text=text.replace(/\b[0-9a-f]{32,}\b/gi,'[redacted]');
+  if(/^Failed to fetch$/i.test(text)||/NetworkError/i.test(text)) return 'SnapShackle did not answer. It may have stopped.';
+  if(text.length>400) text=text.slice(0,400)+'…';
+  return text;
+}
+function fail(error){
+  console.error('[SnapShackle]',error);
+  const text=readableError(error);
+  notify(text);
+  const alertEl=$('#alert');
+  if(alertEl) alertEl.textContent=text;
+}
+function setDisabled(el,value){if(!el)return;el.disabled=!!value;el.setAttribute('aria-disabled',value?'true':'false')}
+function trackAction(el,work){
+  if(el){el.setAttribute('aria-busy','true');el.setAttribute('aria-disabled','true')}
+  return Promise.resolve().then(work).finally(()=>{
+    if(!el)return;
+    el.removeAttribute('aria-busy');
+    el.setAttribute('aria-disabled',el.disabled?'true':'false');
+  });
+}
+function confirmAction(message,acceptLabel){
+  const dialog=$('#confirmDialog');
+  $('#confirmMessage').textContent=message;
+  $('#confirmAccept').textContent=acceptLabel||'Continue';
+  return new Promise(resolve=>{
+    const finish=()=>{dialog.removeEventListener('close',onClose);resolve(dialog.returnValue==='accept')};
+    const onClose=()=>finish();
+    dialog.addEventListener('close',onClose);
+    dialog.returnValue='';
+    dialog.showModal();
+    $('#confirmCancel').focus();
+  });
+}
 function sanitizePrefix(s){return (s||'SnapShackle').replace(/[^a-z0-9_-]/gi,'').substring(0,30)||'SnapShackle'}
 function downloadName(extension){return `${sanitizePrefix(settings.namePrefix)}-${new Date().toISOString().replace(/[:.]/g,'-')}.${extension}`}
 function download(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),20000)}
@@ -100,10 +136,10 @@ function withDelay(endpoint){const delay=Number($('#delay')?.value||0);if(!delay
   let left=delay;notify(`Capturing in ${left} s — switch to what you want to capture`);
   const tick=setInterval(()=>{left--;if(left>0)notify(`Capturing in ${left} s…`);else clearInterval(tick)},1000);
   return endpoint+(endpoint.includes('?')?'&':'?')+'delay='+delay}
-$('#capture').onclick=()=>capture(withDelay('/api/capture'+($('#display').value!==''?'?screen='+encodeURIComponent($('#display').value):''))).catch(fail);
+$('#capture').onclick=()=>trackAction($('#capture'),()=>capture(withDelay('/api/capture'+($('#display').value!==''?'?screen='+encodeURIComponent($('#display').value):'')))).catch(fail);
 $('#region').onclick=()=>capture(withDelay('/api/region')).catch(fail);
-$('#refreshWindows').onclick=refreshWindows;
-$('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose an application window first');capture(withDelay('/api/capture?window='+encodeURIComponent($('#windows').value))).catch(fail)};
+$('#refreshWindows').onclick=()=>trackAction($('#refreshWindows'),refreshWindows);
+$('#windowCapture').onclick=()=>{if(!$('#windows').value)return notify('Choose an application window first');trackAction($('#windowCapture'),()=>capture(withDelay('/api/capture?window='+encodeURIComponent($('#windows').value)))).catch(fail)};
 function shareScreen(constraints){if(!navigator.mediaDevices?.getDisplayMedia)throw Error('Screen sharing unavailable in this browser or restricted by policy');return navigator.mediaDevices.getDisplayMedia(constraints)}
 // Stills, GIF and scrolling capture stay silent. Video sound goes through SnapShackleAudio only.
 async function getSharedScreen(){return shareScreen({video:{frameRate:settings.recordFps},audio:false})}
@@ -178,15 +214,16 @@ async function refreshLibrary(){
   }
   for(let item of items.slice(0,90)){let button=document.createElement('button');button.className='capture-card'+(item.name===librarySelection?' active':'');button.dataset.capture=item.name;
     let preview=document.createElement('img');preview.alt='Capture thumbnail';preview.loading='lazy';let text=document.createElement('span'),name=document.createElement('b'),meta=document.createElement('small');name.textContent=item.name;meta.textContent=(item.textMatch?'Text in image matches · ':'')+((item.tags||[]).join(' · ')||new Date(item.modified).toLocaleDateString());text.append(name,meta);button.append(preview,text);root.append(button);
-    button.onclick=async()=>{try{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(blob,item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}catch(ex){fail(ex)}};
+    button.setAttribute('data-action','snapshackle.library.get');button.setAttribute('aria-disabled','false');
+    button.onclick=()=>trackAction(button,async()=>{let r=await api('/api/library/'+encodeURIComponent(item.name));if(!r.ok)throw Error('Capture not found');let blob=await r.blob();await loadImage(blob,item.name,{autoSave:false});librarySelection=item.name;$('#tags').value=(item.tags||[]).join(', ');$('#note').value=item.note||'';for(let node of root.children)node.classList.toggle('active',node===button)}).catch(fail);
     // Hidden cards incur no image decode or server work until scrolled into view.
     if(thumbnailObserver)thumbnailObserver.observe(button);
     else if(items.indexOf(item)<6)queueThumbnail(preview,item.name,generation);
   }
 }catch(e){fail(e)}}
-$('#libraryRefresh').onclick=refreshLibrary;$('#librarySearch').oninput=()=>{clearTimeout(searchTimeout);searchTimeout=setTimeout(refreshLibrary,200)};
+$('#libraryRefresh').onclick=()=>trackAction($('#libraryRefresh'),refreshLibrary);$('#librarySearch').oninput=()=>{clearTimeout(searchTimeout);searchTimeout=setTimeout(refreshLibrary,200)};
 async function saveLibrary(){let png=await editor.export();let r=await api('/api/library',{method:'POST',headers:{'Content-Type':'image/png'},body:png});if(!r.ok)throw Error('Could not save screenshot');let info=await r.json();librarySelection=info.name;notify('Saved '+info.name);await refreshLibrary()}
-$('#librarySave').onclick=()=>saveLibrary().catch(fail);
+$('#librarySave').onclick=()=>trackAction($('#librarySave'),saveLibrary).catch(fail);
 // Share: folder copy, file on the clipboard, show in Explorer, open. All of it happens on this computer.
 const SHARE_LABELS={clipboard:'Copy file to clipboard',reveal:'Show in Explorer',open:'Open in default app'};
 function parseShareFolders(text){return String(text||'').split(/\r?\n/).map(line=>{const at=line.indexOf('=');return at<0?null:{name:line.slice(0,at).trim(),path:line.slice(at+1).trim()}}).filter(x=>x&&x.name&&x.path).slice(0,8)}
@@ -202,10 +239,10 @@ async function shareCapture(name){
   const r=await api('/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({capture:name,kind:folder?'folder':choice,destination:folder?choice.slice(7):''})});
   const body=await r.json().catch(()=>({}));if(!r.ok)throw Error(body.error||'Could not share');notify(body.message||'Shared')
 }
-$('#shareSelected').onclick=()=>{if(!librarySelection)return notify('Choose a saved capture first');shareCapture(librarySelection).catch(fail)};
-$('#shareCurrent').onclick=()=>saveLibrary().then(()=>shareCapture(librarySelection)).catch(fail);
-$('#metadataSave').onclick=async()=>{if(!librarySelection)return notify('Choose a saved capture first');try{let r=await api('/api/library/'+encodeURIComponent(librarySelection),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags:$('#tags').value.split(',').map(x=>x.trim()).filter(Boolean),note:$('#note').value})});if(!r.ok)throw Error('Could not save details');notify('Capture details updated');await refreshLibrary()}catch(e){fail(e)}};
-$('#libraryDelete').onclick=async()=>{if(!librarySelection)return notify('Choose a saved capture first');if(!confirm('Delete '+librarySelection+' permanently?'))return;try{let r=await api('/api/library/'+encodeURIComponent(librarySelection),{method:'DELETE',headers:{'X-SnapShackle-Confirm':'yes'}});if(!r.ok)throw Error('Delete failed');librarySelection=null;$('#tags').value='';$('#note').value='';await refreshLibrary();notify('Capture deleted')}catch(e){fail(e)}};
+$('#shareSelected').onclick=()=>trackAction($('#shareSelected'),()=>{if(!librarySelection)return notify('Choose a saved capture first');return shareCapture(librarySelection)}).catch(fail);
+$('#shareCurrent').onclick=()=>trackAction($('#shareCurrent'),()=>saveLibrary().then(()=>shareCapture(librarySelection))).catch(fail);
+$('#metadataSave').onclick=()=>trackAction($('#metadataSave'),async()=>{if(!librarySelection)return notify('Choose a saved capture first');let r=await api('/api/library/'+encodeURIComponent(librarySelection),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags:$('#tags').value.split(',').map(x=>x.trim()).filter(Boolean),note:$('#note').value})});if(!r.ok)throw Error('Could not save details');notify('Capture details updated');await refreshLibrary()}).catch(fail);
+$('#libraryDelete').onclick=()=>trackAction($('#libraryDelete'),async()=>{if(!librarySelection)return notify('Choose a saved capture first');const ok=await confirmAction('Delete '+librarySelection+' permanently? This cannot be undone.','Delete');if(!ok)return;let r=await api('/api/library/'+encodeURIComponent(librarySelection),{method:'DELETE',headers:{'X-SnapShackle-Confirm':'yes'}});if(!r.ok){const body=await r.json().catch(()=>({}));throw Error(body.error||'Could not delete that capture')};librarySelection=null;$('#tags').value='';$('#note').value='';await refreshLibrary();notify('Capture deleted')}).catch(fail);
 function setRecordAudioLive(plan,cameraOn=false){
   const el=$('#recordAudioLive'),button=$('#record');
   const text=[plan&&plan.mode!=='off'?(plan.liveText||SnapShackleAudio.liveText(plan)):'',SnapShackleWebcam.liveText(cameraOn)].filter(Boolean).join(' · ');
@@ -336,14 +373,14 @@ async function recognize(){
   const found=await new TextDetector().detect(await createImageBitmap(blob));
   return {text:found.map(x=>x.rawValue).join('\n'),lines:SnapShackleRedact.fromTextDetector(found),engine:'Browser OCR'};
 }
-$('#ocr').onclick=async()=>{try{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}catch(e){fail(e)}};
+$('#ocr').onclick=()=>trackAction($('#ocr'),async()=>{const r=await recognize();$('#ocrText').value=r.text;notify(r.engine+' complete')}).catch(fail);
 // Voice notes on annotations (assets/voice.js). Local only: the microphone is open only while recording and the clip
 // lives on the annotation (so Undo, Redo and an editable project carry it). Nothing is uploaded.
 function selectedObject(){return editor.selected>=0?editor.objects[editor.selected]:null}
 function refreshVoice(source){
   const from=source||editor,o=from.selected>=0?from.objects[from.selected]:null,recording=!!voiceSession;
-  $('#voiceRecord').textContent=recording?'Stop recording':'Record';$('#voiceRecord').disabled=!recording&&!o;
-  for(const id of ['voicePlay','voiceSave','voiceDelete'])$('#'+id).disabled=recording||!o?.voice;
+  $('#voiceRecord').textContent=recording?'Stop recording':'Record';setDisabled($('#voiceRecord'),!recording&&!o);
+  for(const id of ['voicePlay','voiceSave','voiceDelete'])setDisabled($('#'+id),recording||!o?.voice);
   if(!recording)$('#voiceStatus').textContent=!o?'Select an annotation, then Record.':(o.voice?SnapShackleVoice.describe(o.voice)+' on this annotation. It stays on this computer.':'No voice note on this annotation.');
 }
 function attachVoice(note){
@@ -373,7 +410,7 @@ let aiSuggestions=[];
 async function refreshAiStatus(){
   try{const s=await (await api('/api/ai/status')).json();
     $('#aiStatus').textContent=!s.enabled?'Off. Turn it on under Settings, then save.':'On. Router '+s.routerUrl+(s.keySource==='none'?' (no key installed)':' (key from Windows Credential Manager)')+(s.privacy==='local'?', local models only.':'.')+(s.problem?' '+s.problem:'');
-    $('#aiAltText').disabled=$('#aiSuggestBtn').disabled=!s.enabled}catch{}
+    setDisabled($('#aiAltText'),!s.enabled);setDisabled($('#aiSuggestBtn'),!s.enabled)}catch{}
 }
 async function aiCall(path){
   const blob=await editor.export(),response=await api(path,{method:'POST',headers:{'Content-Type':'image/png'},body:blob});
@@ -381,7 +418,7 @@ async function aiCall(path){
   if(!response.ok)throw Error(data.error||'AI help failed');
   return data;
 }
-$('#aiAltText').onclick=async()=>{try{notify('Asking the router…');const r=await aiCall('/api/ai/alt-text');$('#aiAlt').value=r.text;notify('Alt text ready'+(r.target?' ('+r.target+')':'')+'. Read it before you use it.')}catch(e){fail(e)}};
+$('#aiAltText').onclick=()=>trackAction($('#aiAltText'),async()=>{notify('Asking the router…');const r=await aiCall('/api/ai/alt-text');$('#aiAlt').value=r.text;notify('Alt text ready'+(r.target?' ('+r.target+')':'')+'. Read it before you use it.')}).catch(fail);
 $('#aiAltCopy').onclick=async()=>{try{if(!$('#aiAlt').value)return notify('Describe the image first');await navigator.clipboard.writeText($('#aiAlt').value);notify('Alt text copied')}catch(e){fail(e)}};
 $('#aiAltNote').onclick=()=>{if(!$('#aiAlt').value)return notify('Describe the image first');$('#note').value=$('#aiAlt').value;notify('Alt text is in the note field. Save the tags and note to keep it.')};
 function renderAiSuggestions(){
@@ -391,8 +428,8 @@ function renderAiSuggestions(){
     const text=document.createElement('span');text.textContent=SnapShackleAiSuggest.describe(s);row.append(box,text);root.append(row)});
   $('#aiApply').hidden=false;$('#aiApply').textContent=`Add ${aiSuggestions.length} checked`;
 }
-$('#aiSuggestBtn').onclick=async()=>{try{notify('Asking the router…');const r=await aiCall('/api/ai/suggest');aiSuggestions=(r.suggestions||[]).filter(SnapShackleAiSuggest.usable);renderAiSuggestions();
-  notify(aiSuggestions.length?`${aiSuggestions.length} suggestion(s)${r.target?' from '+r.target:''}. Nothing is added until you press Add checked.`:'The router had no usable suggestions')}catch(e){fail(e)}};
+$('#aiSuggestBtn').onclick=()=>trackAction($('#aiSuggestBtn'),async()=>{notify('Asking the router…');const r=await aiCall('/api/ai/suggest');aiSuggestions=(r.suggestions||[]).filter(SnapShackleAiSuggest.usable);renderAiSuggestions();
+  notify(aiSuggestions.length?`${aiSuggestions.length} suggestion(s)${r.target?' from '+r.target:''}. Nothing is added until you press Add checked.`:'The router had no usable suggestions')}).catch(fail);
 $('#aiSuggestions').onchange=()=>{const n=[...$('#aiSuggestions').querySelectorAll('input:checked')].length;$('#aiApply').textContent=`Add ${n} checked`};
 $('#aiApply').onclick=()=>{const picked=[...$('#aiSuggestions').querySelectorAll('input:checked')].map(x=>aiSuggestions[+x.dataset.index]);
   const objects=SnapShackleAiSuggest.toObjects(picked,canvas.width,canvas.height,editor.counter||1);
@@ -405,7 +442,7 @@ function refreshLayerFields(instance,force){
   const o=instance.selected>=0?instance.objects[instance.selected]:null,b=o?instance.bounds(o):null;
   const locked={layerW:!o||o.type==='step'||o.type==='text',layerH:!o||o.type==='step'};
   for(const id of ['layerX','layerY','layerW','layerH']){const el=$('#'+id);if(!el)continue;
-    el.disabled=!o||!!locked[id];
+    setDisabled(el,!o||!!locked[id]);
     if(force||document.activeElement!==el)el.value=b?String(Math.round({layerX:b.x,layerY:b.y,layerW:b.w,layerH:b.h}[id])):''}
 }
 function applyLayerField(id){
@@ -489,7 +526,7 @@ $('#recordAudio').onchange=syncMicRow;
 $('#recordCamera').onchange=syncCameraRow;
 $('#recordCameraRefresh').onclick=()=>refreshCameraList(true).catch(fail);
 $('#recordMicRefresh').onclick=()=>refreshMicList(true).catch(fail);
-$('#settingsSave').onclick=()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.recordAudio=SnapShackleAudio.normalizeMode($('#recordAudio').value);settings.recordMicId=SnapShackleAudio.normalizeMicId($('#recordMic').value);settings.recordCamera=SnapShackleWebcam.normalizeMode($('#recordCamera').value);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner($('#recordCameraCorner').value);settings.recordCameraSize=SnapShackleWebcam.normalizeSize($('#recordCameraSize').value);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId($('#recordCameraId').value);settings.shareFolders=parseShareFolders($('#shareFolders').value);settings.recordFormat=SnapShackleAudio.normalizeFormat($('#recordFormat').value);settings.aiSuggest=$('#aiSuggest').value==='on'?'on':'off';settings.aiPrivacy=$('#aiPrivacy').value==='any'?'any':'local';settings.theme=$('#theme').value;saveSettings().catch(fail)};
+$('#settingsSave').onclick=()=>trackAction($('#settingsSave'),()=>{settings.namePrefix=sanitizePrefix($('#prefix').value);settings.autoLibrary=$('#autoLibrary').checked;settings.stayInTray=$('#stayInTray').checked;settings.recordFps=Math.max(2,Math.min(12,parseInt($('#fps').value,10)||6));settings.recordAudio=SnapShackleAudio.normalizeMode($('#recordAudio').value);settings.recordMicId=SnapShackleAudio.normalizeMicId($('#recordMic').value);settings.recordCamera=SnapShackleWebcam.normalizeMode($('#recordCamera').value);settings.recordCameraCorner=SnapShackleWebcam.normalizeCorner($('#recordCameraCorner').value);settings.recordCameraSize=SnapShackleWebcam.normalizeSize($('#recordCameraSize').value);settings.recordCameraId=SnapShackleWebcam.normalizeCameraId($('#recordCameraId').value);settings.shareFolders=parseShareFolders($('#shareFolders').value);settings.recordFormat=SnapShackleAudio.normalizeFormat($('#recordFormat').value);settings.aiSuggest=$('#aiSuggest').value==='on'?'on':'off';settings.aiPrivacy=$('#aiPrivacy').value==='any'?'any':'local';settings.theme=$('#theme').value;return saveSettings()}).catch(fail);
 showSettings();
 document.addEventListener('keydown',event=>{
   const target=event.target instanceof Element?event.target:document.activeElement;
@@ -569,11 +606,12 @@ function showSessionEnded(reason){
   document.title='SnapShackle Studio (stopped)';
   try{reload.focus()}catch{}
 }
-$('#endSession').onclick=async()=>{
-  if(!confirm('End this SnapShackle session? The local server, tray icon and global hotkeys stop. Unsaved edits in this tab are lost.'))return;
-  try{const r=await api('/api/session/stop',{method:'POST',headers:{'Content-Type':'application/json','X-SnapShackle-Intent':'end-session'},body:'{}'});
-    if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'Could not end the session')}
-    showSessionEnded()}catch(e){fail(e)}
-};
+$('#endSession').onclick=()=>trackAction($('#endSession'),async()=>{
+  const ok=await confirmAction('End this SnapShackle session? The local server, tray icon and global hotkeys stop. Unsaved edits in this tab are lost.','End session');
+  if(!ok)return;
+  const r=await api('/api/session/stop',{method:'POST',headers:{'Content-Type':'application/json','X-SnapShackle-Intent':'end-session'},body:'{}'});
+  if(!r.ok){const d=await r.json().catch(()=>({}));throw Error(d.error||'Could not end the session')}
+  showSessionEnded();
+}).catch(fail);
 refreshScreens();refreshWindows();refreshLibrary();diagnostics();fitZoom();openFromHash();pollEvents();loadSettings();
 })();

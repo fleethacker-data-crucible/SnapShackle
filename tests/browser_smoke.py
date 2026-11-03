@@ -288,9 +288,11 @@ with sync_playwright() as p:
     assert beacon['url'] == '/api/heartbeat' and beacon['body']['leaving'] is True and beacon['body']['session'] == beat['token'] and beacon['body']['tab'] == beat['tab'], f'bad beacon {beacon}'
     assert '?' not in beacon['url'], 'token must never travel in the query string'
     page.screenshot(path=str(ROOT/'tests/preview.png'), full_page=True)
-    # End session (main navigation) stops the host after a confirmation and says so.
-    page.once('dialog', lambda dialog: dialog.accept())
+    # End session stops the host after a confirmation whose Cancel button is the default.
     page.locator('#endSession').click()
+    page.wait_for_selector('#confirmDialog[open]', timeout=6000)
+    assert page.evaluate('document.activeElement && document.activeElement.id') == 'confirmCancel'
+    page.locator('#confirmAccept').click()
     page.wait_for_selector('.session-ended', timeout=6000)
     assert page.evaluate('window.__stopIntent') == 'end-session'
     ended = page.locator('.session-ended').inner_text()

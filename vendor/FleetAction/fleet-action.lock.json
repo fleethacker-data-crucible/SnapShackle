@@ -1,0 +1,17 @@
+{
+  "schema": "fleet.action.lock/1",
+  "module": "vendor/FleetAction/FleetAction.psm1",
+  "sha256": "4df2ede46a277b46d57fed6592081e4da8f7026f8136b1097ad070a4520acd09",
+  "source": {
+    "repository": "fleethacker-data-crucible/fleet-action-baseline",
+    "path": "src/FleetAction",
+    "commit": null,
+    "tag": null,
+    "fallbackRepository": "fleethacker-data-crucible/edge-ops",
+    "fallbackPath": "tools/fleet-action/FleetAction.psm1",
+    "fallbackPullRequest": 50,
+    "resolved": false,
+    "checkedAt": "2026-11-03T06:38:00Z",
+    "reason": "fleet-action-baseline and edge-ops both returned HTTP 404 to this credential, and fleethacker-comms-data-crucible (the fleet-action-framework proposal, PR 221) was not readable either. The file in this repo implements the action contract used by SnapShackle: JSON-only jobs, action ids app.noun.verb, discovery via commands --json with help --json as an alias, -Confirmed for destructive actions, ConvertFrom-Json via PSObject.Properties, and -Depth on ConvertTo-Json. Replace this copy with the baseline v1.0.0 pin when that commit is readable, and update sha256 and commit together."
+  }
+}

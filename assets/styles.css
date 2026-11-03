@@ -332,6 +332,7 @@ dialog {
 }
 dialog[open] { animation: snapshackle-scale-in 160ms var(--ease-out); }
 dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(2px); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .dialog-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .dialog-head h2 { margin: 0; font-size: 17px; font-weight: 700; }
 dialog p { color: var(--color-muted-foreground); font-size: 13px; }
