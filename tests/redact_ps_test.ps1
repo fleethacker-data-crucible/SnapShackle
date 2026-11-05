@@ -30,13 +30,14 @@ $lines = @(
     (New-Line 3 @('EDIPI', '1234567890')),
     (New-Line 4 @('Card', '4111', '1111', '1111', '1111')),
     (New-Line 5 @('Host', '10.0.0.255')),
+    (New-Line 7 @('Key', 'sk-DEMO0000000000000000AAAA', 'token', 'ghp_AAAAAAAAAAAAAAAAAAAAAAAA')),
     # Must NOT match: invalid IP octet, failing Luhn card, a date, an 11-digit number.
     (New-Line 6 @('bad', '999.1.1.1', '4111', '1111', '1111', '1112', '2026-10-24', '12345678901'))
 )
 Test-Case 'finds email, SSN, phone, DoD ID, card and IP, and nothing else' {
     $found = @(Find-SnapShackleSensitive $lines 0)
     $kinds = (@($found | ForEach-Object { $_.kind }) | Sort-Object) -join ','
-    Assert-True ($kinds -eq 'card,dodid,email,ip,phone,ssn') "kinds: $kinds ($($found.Count) found)"
+    Assert-True ($kinds -eq 'card,dodid,email,ip,phone,secret,secret,ssn') "kinds: $kinds ($($found.Count) found)"
 }
 Test-Case 'boxes cover every word of a match' {
     $found = @(Find-SnapShackleSensitive $lines 0)

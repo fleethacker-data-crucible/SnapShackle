@@ -128,7 +128,7 @@ evidence=(ROOT/'tools/evidence-capture.ps1').read_text(encoding='utf-8')
 assert 'CopyFromScreen' not in evidence and 'Get-SnapShackleRect' not in evidence and 'Get-SnapShackleWindows' not in evidence, 'evidence capture must only capture windows it draws'
 assert 'CaptureWindow([long]$form.Handle' in evidence and 'New-SnapShackleSyntheticWindow' in evidence
 assert 'Invoke-WebRequest' not in evidence and 'http://' not in evidence and 'https://' not in evidence
-assert all(p in (ROOT/'modules/Redact.ps1').read_text(encoding='utf-8') for p in ['email','ssn','card','dodid','phone','ip']), 'redaction kinds'
+assert all(p in (ROOT/'modules/Redact.ps1').read_text(encoding='utf-8') for p in ['email','secret','ssn','card','dodid','phone','ip']), 'redaction kinds'
 print('PASS: evidence capture draws its own windows, never copies the screen, and stays local')
 print('PASS: optional record sound is wired, off by default, and kept out of GIF and still capture')
 

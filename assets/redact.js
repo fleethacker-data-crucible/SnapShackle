@@ -6,6 +6,7 @@ function luhn(digits){let sum=0,odd=false;for(let i=digits.length-1;i>=0;i--){le
 // Order matters: earlier kinds win when two matches overlap (an SSN is not also a phone number).
 const KINDS=[
   {kind:'email',label:'Email',re:/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g},
+  {kind:'secret',label:'API key or token',re:/(?<![A-Za-z0-9_-])(?:sk-[A-Za-z0-9_-]{16,}|fl-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9_-])/g},
   {kind:'ssn',label:'SSN',re:/(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)/g},
   {kind:'card',label:'Card number',re:/(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)/g,check:m=>{const d=m.replace(/\D/g,'');return d.length>=13&&d.length<=19&&luhn(d)}},
   {kind:'dodid',label:'DoD ID',re:/(?<!\d)\d{10}(?!\d)/g},
