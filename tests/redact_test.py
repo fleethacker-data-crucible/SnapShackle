@@ -16,6 +16,7 @@ CASES = r'''()=>{
     line(3,'EDIPI','1234567890'),
     line(4,'Card','4111','1111','1111','1111'),
     line(5,'Host','10.0.0.255'),
+    line(7,'Key','sk-DEMO0000000000000000AAAA','token','ghp_AAAAAAAAAAAAAAAAAAAAAAAA'),
     // Must NOT match: invalid IP octet, failing Luhn card, a date, an 11-digit number.
     line(6,'bad','999.1.1.1','4111','1111','1111','1112','2026-10-24','12345678901'),
   ];
@@ -35,8 +36,8 @@ with sync_playwright() as p:
 
 kinds = {f['kind']: f for f in data['found']}
 print(data['found'])
-assert sorted(kinds) == ['card', 'dodid', 'email', 'ip', 'phone', 'ssn'], sorted(kinds)
-assert len(data['found']) == 6, 'false positives: ' + repr([f for f in data['found'] if f['box']['y'] >= 200])
+assert sorted(kinds) == ['card', 'dodid', 'email', 'ip', 'phone', 'secret', 'ssn'], sorted(kinds)
+assert len(data['found']) == 8, 'false positives: ' + repr([f for f in data['found'] if f['box']['y'] >= 200])
 assert kinds['email']['text'] == 'j.smith@corp.org'
 # The phone spans two OCR words; its box must cover both.
 phone = kinds['phone']['box']

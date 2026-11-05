@@ -16,6 +16,7 @@ function Test-SnapShackleLuhn([string]$Digits) {
 # Order matters: an earlier kind wins when two matches overlap (an SSN is not also a phone number).
 $script:SnapShackleRedactKinds = @(
     @{ kind = 'email'; label = 'Email'; pattern = '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' },
+    @{ kind = 'secret'; label = 'API key or token'; pattern = '(?<![A-Za-z0-9_-])(?:sk-[A-Za-z0-9_-]{16,}|fl-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9_-])' },
     @{ kind = 'ssn'; label = 'SSN'; pattern = '(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)' },
     @{ kind = 'card'; label = 'Card number'; pattern = '(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)'
        check = { param($m) $d = $m -replace '\D', ''; $d.Length -ge 13 -and $d.Length -le 19 -and (Test-SnapShackleLuhn $d) } },
