@@ -13,6 +13,7 @@ defaults:
 jobs:
   windows:
     timeout-minutes: 30
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -126,6 +127,7 @@ jobs:
   static:
     # Python static checks. Python is fine on the Linux runners (not on Windows runners).
     # The containers have python3 3.8 and no `python` alias, so call python3 from bash.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, docker]
     timeout-minutes: 10
     defaults:
