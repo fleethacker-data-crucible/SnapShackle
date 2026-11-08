@@ -3,17 +3,27 @@
   so a capture starts from the keyboard and never includes the studio window.
   After a hotkey capture the image is copied to the clipboard, saved to the library, and announced
   to the studio through /api/events.
+  The tray icon comes from the shared FleetHacker tray kit (vendor/fleet-tray): an S tile drawn at
+  the tray's real size for this display, so it is crisp instead of a 32 px drawing shrunk to 16.
   Shutdown: when the host sets $Shared.Quit (tab closed, End session, Exit, Stop-SnapShackle.ps1, Ctrl+C)
   a timer leaves the message loop; the finally block unregisters every hotkey on this thread (the
   thread that registered them) and disposes the NotifyIcon, which removes it from the tray, so no
   ghost icon is left behind.
 #>
+# Get-FleetTrayIcon compiles FleetTrayArt.cs once per process (the tray thread reuses the type).
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'vendor/fleet-tray/FleetTray.ps1')
+
+# SnapShackle's tray icon at the tray's size. If C# cannot be compiled for the kit, the shipped
+# favicon is used at the same size.
+function Get-SnapShackleTrayIcon([string]$Root) {
+    Get-FleetTrayIcon -App snapshackle -FallbackPath (Join-Path $Root 'assets/ui/favicon.ico')
+}
+
 if (-not ('SnapShackle.HotkeyWindow' -as [type])) {
 Add-Type -ReferencedAssemblies @('System.Windows.Forms','System.Drawing') -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 namespace SnapShackle {
@@ -46,21 +56,6 @@ namespace SnapShackle {
    ids.Clear();DestroyHandle();
   }
  }
- public static class TrayArt {
-  [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
-  // The SnapShackle mark: a dashed violet capture frame with a white cut line, drawn at runtime so no icon file ships.
-  public static Icon Make(){
-   using(var bmp=new Bitmap(32,32)){
-    using(var g=Graphics.FromImage(bmp)){
-     g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Color.Transparent);
-     using(var frame=new Pen(Color.FromArgb(139,125,255),3f)){frame.DashPattern=new float[]{2.2f,1.3f};g.DrawRectangle(frame,4,6,24,19);}
-     using(var cut=new Pen(Color.FromArgb(240,242,250),3f)){cut.StartCap=LineCap.Round;cut.EndCap=LineCap.Round;g.DrawLine(cut,6,29,27,6);g.DrawLine(cut,21,6,27,6);g.DrawLine(cut,27,6,27,12);}
-    }
-    IntPtr h=bmp.GetHicon();
-    try{using(var tmp=Icon.FromHandle(h))return (Icon)tmp.Clone();}finally{DestroyIcon(h);}
-   }
-  }
- }
 }
 '@
 }
@@ -85,7 +80,7 @@ $script:SnapShackleTrayScript = {
         . (Join-Path $Root 'modules/Tray.ps1')
 
         $tray = [Windows.Forms.NotifyIcon]::new()
-        $tray.Icon = [SnapShackle.TrayArt]::Make()
+        $tray.Icon = Get-SnapShackleTrayIcon $Root
         $tray.Text = 'SnapShackle'
         $hotkeys = [SnapShackle.HotkeyWindow]::new()
         # Explorer drops tray icons when it restarts. Put this one back on TaskbarCreated.
@@ -93,7 +88,7 @@ $script:SnapShackleTrayScript = {
             try {
                 $tray.Visible = $false
                 $previous = $tray.Icon
-                $tray.Icon = [SnapShackle.TrayArt]::Make()
+                $tray.Icon = Get-SnapShackleTrayIcon $Root
                 $tray.Visible = $true
                 if ($previous) { $previous.Dispose() }
             } catch {}

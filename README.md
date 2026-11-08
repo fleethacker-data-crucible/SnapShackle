@@ -88,7 +88,7 @@ Captures live under `%LOCALAPPDATA%\SnapShackle\Captures`. Each capture is a PNG
 - The studio now uses **Lazarette's design system**: the same colour tokens, Inter and Cascadia type, radius and shadow scale, button styles, sidebar and top-bar layout, and **Lucide icons** (1.54.0, the version Lazarette uses, bundled offline in `assets/icons.js`).
 - **Light and dark themes** like Lazarette: dark by default, a sun/moon button in the top bar, and **Workflows → Settings → Theme** offers Dark, Light or Match Windows. The choice is saved by the host.
 - **Single-key tool shortcuts** shown beside each tool: `V` select, `A` arrow, `R` rectangle, `E` ellipse, `L` line, `P` pen, `H` highlight, `T` text, `N` steps, `C` crop, `X` redact, `Q` pixelate, `B` blur. They are ignored while you type in a field.
-- The native selection overlay and the tray icon use the same violet and sky accents.
+- The native selection overlay uses the same violet and sky accents.
 
 ## Smart redaction and searchable library (v0.10)
 
@@ -108,7 +108,7 @@ Captures live under `%LOCALAPPDATA%\SnapShackle\Captures`. Each capture is a PNG
   | Screen under the cursor | `Shift+PrtScn` | `Ctrl+Alt+F` |
 
   The console, the tray tooltip menu and **Workflows → Diagnostics** show which chords are active. A hotkey capture is copied to the clipboard (bitmap plus PNG), saved to the library, and opened in the studio if it is open. Click the notification or the tray icon to open the studio.
-- **Tray icon** with Capture region, Capture screen, Open studio and Exit. Start with `-NoTray` to skip hotkeys and the tray. By default the tray icon and hotkeys go away with the studio tab; see [Session lifecycle](#session-lifecycle) to keep them.
+- **Tray icon** (a bold S tile from the shared FleetHacker tray kit, drawn at the tray's real size so it stays crisp at any display scale) with Capture region, Capture screen, Open studio and Exit. Start with `-NoTray` to skip hotkeys and the tray. By default the tray icon and hotkeys go away with the studio tab; see [Session lifecycle](#session-lifecycle) to keep them.
 - **Selection overlay:** hovering highlights the window under the cursor and a click takes it; dragging draws a free region; `Shift` keeps it square; `Esc` or right-click cancels. A loupe shows magnified pixels, screen coordinates and the colour under the cursor. The overlay takes keyboard focus as it opens.
 - **Window capture uses `PrintWindow`** (`PW_RENDERFULLCONTENT`), so a window's own content is captured even where other windows, including the studio, cover it. Apps that answer with a blank image fall back to screen pixels; the status bar says which method was used. Window bounds come from DWM, so the invisible 7 px resize borders are no longer included, and windows on other virtual desktops are hidden from the list.
 - **Per-monitor DPI v2**, so selections line up on mixed-DPI monitors.
@@ -220,6 +220,7 @@ modules/Redact.ps1         Sensitive-text detection and redaction boxes for scri
 tools/                     evidence-capture.ps1 and its sample manifest (not needed at runtime)
 modules/Share.ps1          Share destinations: folder copy, clipboard file, Explorer, default app
 modules/Tray.ps1           Global hotkeys and tray icon on their own STA thread
+vendor/fleet-tray/         FleetHacker tray kit (edge-ops ui-kit/tray, see VERSION): the tray icon, drawn at the tray's size
 modules/Lifecycle.ps1      Tab-owns-the-server presence rule, runtime files, finding/stopping instances
 index.html                 Studio layout
 assets/styles.css          Standalone responsive theme

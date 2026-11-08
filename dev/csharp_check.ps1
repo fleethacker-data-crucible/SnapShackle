@@ -1,5 +1,5 @@
 <#
-  Compiles every inline C# block (Add-Type -TypeDefinition @' ... '@) in the repo with Roslyn,
+  Compiles every inline C# block (Add-Type -TypeDefinition @' ... '@) and every .cs file in the repo with Roslyn,
   as C# 5 against .NET Framework 4.8 reference assemblies - the same language level Windows
   PowerShell 5.1 uses. Lets you catch compile errors on a machine without Windows.
   Usage (PowerShell 7): pwsh dev/csharp_check.ps1 -ReferenceDir <folder with mscorlib.dll, System.dll,
@@ -35,6 +35,19 @@ Get-ChildItem -Path $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullN
             Write-Host "$(if ($emit.Success) {'WARN'} else {'FAIL'})  $($_.Name) block $i"
             $problems | ForEach-Object { Write-Host ('      ' + $_.ToString()) }
         }
+    }
+}
+# Vendored C# files (vendor/fleet-tray/FleetTrayArt.cs) are compiled the same way.
+Get-ChildItem -Path $root -Recurse -File -Filter *.cs | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {
+    $tree = [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText([IO.File]::ReadAllText($_.FullName), $parse)
+    $compilation = [Microsoft.CodeAnalysis.CSharp.CSharpCompilation]::Create($_.BaseName, [Microsoft.CodeAnalysis.SyntaxTree[]]@($tree), $refs, $options)
+    $emit = $compilation.Emit([IO.MemoryStream]::new())
+    $problems = @($emit.Diagnostics | Where-Object { $_.Severity -ge [Microsoft.CodeAnalysis.DiagnosticSeverity]::Warning })
+    if ($emit.Success -and $problems.Count -eq 0) { Write-Host "OK    $($_.Name)" }
+    else {
+        if (-not $emit.Success) { $failed++ }
+        Write-Host "$(if ($emit.Success) {'WARN'} else {'FAIL'})  $($_.Name)"
+        $problems | ForEach-Object { Write-Host ('      ' + $_.ToString()) }
     }
 }
 if ($failed) { exit 1 }

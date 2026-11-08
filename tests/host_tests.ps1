@@ -628,6 +628,30 @@ Test-Case 'Share: copying to a folder never overwrites and clipboard/open use th
     } finally { [IO.Directory]::Delete($base, $true) }
 }
 
+Test-Case 'Tray icon comes from the FleetHacker tray kit, drawn at the tray size' {
+    $tray = [IO.File]::ReadAllText((Join-Path $root 'modules/Tray.ps1'))
+    Assert-True ($tray -notmatch 'GetHicon' -and $tray -notmatch 'SnapShackle\.TrayArt|class TrayArt') 'Tray.ps1 still draws its own icon'
+    Assert-True (([regex]::Matches($tray, 'Get-SnapShackleTrayIcon \$Root')).Count -eq 2) 'tray start and Explorer restart must both use Get-SnapShackleTrayIcon'
+    $version = [IO.File]::ReadAllText((Join-Path $root 'vendor/fleet-tray/VERSION')).Trim()
+    Assert-True ($version -eq 'edge-ops ui-kit/tray v1.0.0, commit 6498eaa') "unexpected kit version: $version"
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return }
+    # The tray thread is its own runspace: load Tray.ps1 there, as the tray script does.
+    $ps = [PowerShell]::Create()
+    try {
+        [void]$ps.AddScript({
+            param($Root)
+            . (Join-Path $Root 'modules/Tray.ps1')
+            $icon = Get-SnapShackleTrayIcon $Root
+            @{ Width = $icon.Width; Height = $icon.Height; Want = Get-FleetTraySize; Kit = [bool]('FleetTray.Art' -as [type]) }
+        }).AddArgument($root)
+        $out = @($ps.Invoke())
+        Assert-True ($ps.Streams.Error.Count -eq 0) ('tray runspace errors: ' + ($ps.Streams.Error -join '; '))
+        $r = $out[0]
+        Assert-True $r.Kit 'FleetTray.Art was not compiled'
+        Assert-True ($r.Width -eq $r.Want -and $r.Height -eq $r.Want) "icon is $($r.Width)x$($r.Height), tray wants $($r.Want)"
+    } finally { $ps.Dispose() }
+}
+
 Test-Case 'Every PowerShell file parses' {
     $errors = @()
     Get-ChildItem -Path $root -Recurse -File -Filter *.ps1 | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | ForEach-Object {
