@@ -633,7 +633,7 @@ Test-Case 'Tray icon comes from the FleetHacker tray kit, drawn at the tray size
     Assert-True ($tray -notmatch 'GetHicon' -and $tray -notmatch 'SnapShackle\.TrayArt|class TrayArt') 'Tray.ps1 still draws its own icon'
     Assert-True (([regex]::Matches($tray, 'Get-SnapShackleTrayIcon \$Root')).Count -eq 2) 'tray start and Explorer restart must both use Get-SnapShackleTrayIcon'
     $version = [IO.File]::ReadAllText((Join-Path $root 'vendor/fleet-tray/VERSION')).Trim()
-    Assert-True ($version -eq 'edge-ops ui-kit/tray v1.0.0, commit 8d6627b') "unexpected kit version: $version"
+    Assert-True ($version -eq 'edge-ops ui-kit/tray v1.0.0, commit c2172f7') "unexpected kit version: $version"
     if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return }
     # The tray thread is its own runspace: load Tray.ps1 there, as the tray script does.
     $ps = [PowerShell]::Create()
