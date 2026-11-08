@@ -1,7 +1,7 @@
 """Development-only static checks; not a substitute for Windows runtime verification."""
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','tools/handoff.ps1','docs/HANDOFF.md','tests/handoff_test.ps1','docs/DEMO-WALKTHROUGH.md','tests/data_dir_test.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','docs/CLI-API.md','modules/Actions.ps1','modules/Handoff.ps1','modules/CliClient.ps1','vendor/FleetAction/FleetAction.psm1','vendor/FleetAction/fleet-action.lock.json','examples/training-course-handoff.json','tests/FleetAction.Tests.ps1','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
+required=['Launch-SnapShackle.bat','Start-SnapShackle.ps1','modules/LocalHttp.ps1','modules/Native.ps1','modules/Ocr.ps1','modules/Tray.ps1','modules/Library.ps1','tools/handoff.ps1','docs/HANDOFF.md','tests/handoff_test.ps1','docs/DEMO-WALKTHROUGH.md','tests/data_dir_test.ps1','docs/CAPTURE-FORMAT.md','tests/capture_format_test.ps1','modules/Cli.ps1','snapshackle.ps1','SnapShackle-CLI.bat','docs/CLI.md','docs/CLI-API.md','modules/Actions.ps1','modules/Handoff.ps1','modules/CliClient.ps1','vendor/FleetAction/FleetAction.psm1','vendor/FleetAction/fleet-action.lock.json','vendor/fleet-tray/FleetTrayArt.cs','vendor/fleet-tray/FleetTray.ps1','examples/training-course-handoff.json','tests/FleetAction.Tests.ps1','modules/Redact.ps1','tools/evidence-capture.ps1','docs/EVIDENCE-CAPTURE.md','modules/Share.ps1','modules/Migration.ps1','modules/Lifecycle.ps1','Stop-SnapShackle.ps1','index.html','assets/editor.js','assets/studio.js','assets/audio.js','assets/webcam.js','assets/gif.js','assets/stitch.js','assets/redact.js','assets/styles.css','README.md','tests/windows_capture_perf.ps1','assets/icons.js','assets/theme.js']
 for path in required:
  p=ROOT/path
  assert p.is_file() and p.stat().st_size>200,path
@@ -150,6 +150,7 @@ assert "Not starting another copy." in host
 assert "ActivateByTitle('SnapShackle Studio')" not in tray
 assert "StudioTitle" in tray and "ActivateByTitle($title)" in tray
 assert "TaskbarCreated" in tray and "ExplorerRestarted" in tray and "RegisterWindowMessage" in tray
+assert "GetHicon" not in tray and tray.count("Get-SnapShackleTrayIcon $Root")==2 and "vendor/fleet-tray/FleetTray.ps1" in tray, 'tray icon must come from the FleetHacker tray kit'
 assert "string.IsNullOrEmpty(contains)" in native
 assert "reloadSession" in studio and "showSessionEnded('lost')" in studio
 assert "Invalid session" in studio and "location.reload" in studio
