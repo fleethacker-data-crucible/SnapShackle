@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
+from studio_page import read_studio_document
 
 ROOT = Path(__file__).resolve().parents[1]
 image = Image.new('RGB', (900, 580), '#f3f5fa')
@@ -95,13 +96,9 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={'width':1440,'height':950}, accept_downloads=True)
     errors = []
     page.on('pageerror', lambda error:errors.append(str(error)))
-    html = (ROOT/'index.html').read_text(encoding='utf-8')
-    # Load the same scripts, in the same order, as the real page.
-    scripts = re.findall(r'<script[^>]*src="/assets/([a-z]+)\.js"', html)
-    # ...and the same stylesheets (the Fleet tokens first, then the studio's).
-    styles = re.findall(r'<link rel="stylesheet" href="/(assets/[a-z/]+\.css)"', html)
-    html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
-    html = re.sub(r'<link[^>]*stylesheet[^>]*>', '', html)
+    # Load the same scripts, in the same order, as the real page,
+    # and the same stylesheets (the Fleet tokens first, then the studio's).
+    html, scripts, styles = read_studio_document(ROOT)
     page.set_content(html)
     assert styles == ['assets/vendor/fleet/fleet.css','assets/styles.css'], styles
     for sheet in styles:
