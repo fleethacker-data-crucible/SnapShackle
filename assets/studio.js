@@ -408,7 +408,8 @@ window.addEventListener('pagehide',()=>{try{voiceSession?.cancel()}catch{}});
 let aiSuggestions=[];
 async function refreshAiStatus(){
   try{const s=await (await api('/api/ai/status')).json();
-    $('#aiStatus').textContent=!s.enabled?'Off. Turn it on under Settings, then save.':'On. Router '+s.routerUrl+(s.keySource==='none'?' (no key installed)':' (key from Windows Credential Manager)')+(s.privacy==='local'?', local models only.':'.')+(s.problem?' '+s.problem:'');
+    const keyNote=s.keySource==='none'?' (no key installed)':(s.keySource==='local-token'?' (key from the Fairlead local token)':' (key from Windows Credential Manager)');
+    $('#aiStatus').textContent=!s.enabled?'Off. Turn it on under Settings, then save.':'On. Router '+s.routerUrl+keyNote+(s.privacy==='local'?', local models only.':'.')+(s.problem?' '+s.problem:'');
     setDisabled($('#aiAltText'),!s.enabled);setDisabled($('#aiSuggestBtn'),!s.enabled)}catch{}
 }
 async function aiCall(path){

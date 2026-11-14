@@ -1,7 +1,8 @@
 <#
   Tests the optional AI help (alt text and annotation suggestions) against a fake router, never a real one.
-  Part 1 runs modules/Router.ps1 in this process: the router address rules, how the client key is read (Windows Credential Manager,
-  through a replaceable reader), the clean-up of the model's suggestions, a refused key and a router that is not running.
+  Part 1 runs modules/Router.ps1 in this process: the router address rules, how the client key is read (Windows Credential
+  Manager, then the Fairlead local-token file, through replaceable readers), the id check before the key is sent, the
+  clean-up of the model's suggestions, a refused key and a router that is not running.
   Part 2 starts a real SnapShackle host (no tray, no browser, temporary data folder) pointed at tests/fake_router.ps1
   and checks the routes: off by default, the right headers and image reach the router, and the key is never shown,
   saved or logged. Images are synthetic; nothing leaves this computer.
@@ -28,15 +29,29 @@ $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.e
 
 . (Join-Path $root 'modules\Ocr.ps1')
 . (Join-Path $root 'modules\Router.ps1')
+# Never read a real local-token file or start a real Fairlead from this process. Part 2 is a separate process.
+$script:fairleadStarts = 0
+$script:SnapShackleLocalTokenReader = { param([string]$Path) '' }
+$script:SnapShackleFleetStarter = { $script:fairleadStarts++; return @{ State = 'unavailable'; Message = 'Fairlead was not started in this test.' } }
+function Use-RealFairleadProbe {
+    $script:SnapShackleListenerReader = { param([int]$Port) Get-SnapShackleListenerPids $Port }
+    $script:SnapShackleProcessReader = { param([int]$ProcessId) Get-SnapShackleProcessPaths $ProcessId }
+    $script:SnapShackleIdReader = { param([string]$Url) Invoke-SnapShackleFairleadId $Url }
+    Clear-SnapShackleFairleadIdentityCache
+}
+function Read-RouterLog([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) { return @() }
+    return @([IO.File]::ReadAllLines($Path) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+}
 
 $bmp = [Drawing.Bitmap]::new(320, 200); $g = [Drawing.Graphics]::FromImage($bmp); $g.Clear([Drawing.Color]::White)
 $g.DrawString('Quarterly report', [Drawing.Font]::new('Arial', 20, [Drawing.FontStyle]::Regular, [Drawing.GraphicsUnit]::Pixel), [Drawing.Brushes]::Black, 10, 10); $g.Dispose()
 $ms = [IO.MemoryStream]::new(); $bmp.Save($ms, [Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose(); $png = $ms.ToArray(); $ms.Dispose()
 $on = [pscustomobject]@{ aiSuggest = 'on'; aiPrivacy = 'local' }
 
-function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok') {
+function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok', [string]$IdMode = 'ok') {
     $psi = [Diagnostics.ProcessStartInfo]::new($psExe)
-    $psi.Arguments = '-NoProfile -NoLogo -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tests\fake_router.ps1') + '" -Port ' + $Port + ' -Log "' + $Log + '" -Mode ' + $Mode
+    $psi.Arguments = '-NoProfile -NoLogo -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tests\fake_router.ps1') + '" -Port ' + $Port + ' -Log "' + $Log + '" -Mode ' + $Mode + ' -IdMode ' + $IdMode
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardError = $true
     $proc = [Diagnostics.Process]::Start($psi)
     for ($i = 0; $i -lt 60; $i++) {
@@ -70,11 +85,21 @@ try {
         }
         [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $null)
     }
-    Test-Case 'the client key is read only from Windows Credential Manager (Fairlead/SnapShackle), else none with a plain note' {
+    Test-Case 'the client key is the Credential Manager item, else the Fairlead local token, else none' {
         $script:asked = @()
+        $script:SnapShackleLocalTokenReader = { param([string]$Path) 'fl-from-file' }
         Set-SnapShackleCredentialReader { param([string]$Target) $script:asked += $Target; 'fl-from-store' }
         $k = Resolve-SnapShackleRouterKey
         Assert-True ($k.source -eq 'credential-manager' -and $k.key -eq 'fl-from-store' -and $script:asked[0] -eq 'Fairlead/SnapShackle') ('read: ' + ($k | ConvertTo-Json -Compress))
+        Set-SnapShackleCredentialReader { param([string]$Target) $null }
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'local-token' -and $k.key -eq 'fl-from-file') ('local token: ' + $k.source)
+        $script:SnapShackleLocalTokenReader = { param([string]$Path) '' }
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_KEY', 'fl-from-env')
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'none' -and $k.key -eq '') 'an environment variable is not a key'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_KEY', $null)
+        Set-SnapShackleCredentialReader { param([string]$Target) $script:asked += $Target; 'fl-from-store' }
         [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_TARGET', 'Fairlead/Other')
         $null = Resolve-SnapShackleRouterKey
         Assert-True ($script:asked[-1] -eq 'Fairlead/SnapShackle') 'a target outside Fairlead/SnapShackle-* must be ignored'
@@ -92,12 +117,24 @@ try {
         Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([Text.Encoding]::Unicode.GetBytes('fl-abc123'))) -eq 'fl-abc123') 'a UTF-16 key is decoded'
         Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([Text.Encoding]::UTF8.GetBytes('fl-abc123'))) -eq 'fl-abc123') 'a UTF-8 key is decoded'
         Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([byte[]]@(1, 2, 3, 4, 5))) -eq '' -and (ConvertFrom-SnapShackleCredentialBlob ([byte[]]@())) -eq '' -and (ConvertFrom-SnapShackleCredentialBlob $null) -eq '') 'unprintable, empty or no blob is not a key'
+        $tokenFile = Join-Path $work 'local-token'
+        [IO.File]::WriteAllText($tokenFile, "fl-line-one`r`nignored")
+        Assert-True ((Read-SnapShackleLocalTokenFile $tokenFile) -eq 'fl-line-one') 'first line of the local token'
+        [IO.File]::WriteAllText($tokenFile, ([char]0xFEFF) + 'fl-bom')
+        Assert-True ((Read-SnapShackleLocalTokenFile $tokenFile) -eq 'fl-bom') 'a byte-order mark is not part of the key'
+        [IO.File]::WriteAllText($tokenFile, 'fl has a space')
+        Assert-True ((Read-SnapShackleLocalTokenFile $tokenFile) -eq '') 'a token with a space is not a key'
+        [IO.File]::WriteAllBytes($tokenFile, (New-Object byte[] 4097))
+        Assert-True ((Read-SnapShackleLocalTokenFile $tokenFile) -eq '') 'a token file over 4 KB is not a key'
+        Assert-True ((Read-SnapShackleLocalTokenFile (Join-Path $work 'missing-token')) -eq '') 'a missing token file is not a key'
     }
     Test-Case 'a call with no key installed stops before any request and says what to do' {
         Set-SnapShackleCredentialReader { param([string]$Target) $null }
+        $before = $script:fairleadStarts
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
         Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
         Assert-True ($msg -eq 'Open Fairlead and install a key for SnapShackle.') ('no key: ' + $msg)
+        Assert-True ($script:fairleadStarts -eq ($before + 1)) 'Fairlead was not asked to start so it could write a local token'
     }
     Test-Case 'suggestions are cleaned: known kinds only, clamped into the image, bad numbers dropped, capped' {
         $text = 'Sure: [{"kind":"redact","x":0.1,"y":0.2,"w":0.3,"h":0.1,"label":"email"},{"kind":"explode","x":0,"y":0,"w":1,"h":1},{"kind":"box","x":0.9,"y":0.9,"w":0.9,"h":0.9,"label":"big"},{"kind":"box","x":"nope","y":0,"w":0.1,"h":0.1},{"kind":"arrow","x":-3,"y":0,"w":0.0001,"h":0.5}] ok'
@@ -111,7 +148,82 @@ try {
         $long = '[{"kind":"text","x":0.1,"y":0.1,"w":0.1,"h":0.1,"label":"' + ('z' * 200) + '"}]'
         Assert-True (@(ConvertFrom-SnapShackleSuggestions $long)[0].label.Length -eq 80) 'label not cut to 80'
     }
+    Test-Case 'the key is sent only after the id names Fairlead, and nothing on 8776 asks Start-FleetService' {
+        try {
+            $script:probePid = $PID
+            $script:SnapShackleListenerReader = { param([int]$Port) @($script:probePid) }
+            $script:SnapShackleProcessReader = { param([int]$ProcessId) @{ ExecutablePath = 'C:\Fairlead\Fairlead.exe'; ScriptPath = '' } }
+            $script:SnapShackleIdReader = { param([string]$Url) @{ tool = 'other'; pid = $script:probePid; path = 'C:\Fairlead\Fairlead.exe' } }
+            Clear-SnapShackleFairleadIdentityCache
+            $bad = Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776'
+            Assert-True ($bad.code -eq 'not-fairlead') ('wrong tool: ' + $bad.code)
+            $script:SnapShackleIdReader = { param([string]$Url) @{ tool = 'fairlead'; pid = 1; path = 'C:\Fairlead\Fairlead.exe' } }
+            Clear-SnapShackleFairleadIdentityCache
+            $bad = Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776'
+            Assert-True ($bad.code -eq 'not-fairlead') 'wrong pid'
+            $script:SnapShackleIdReader = { param([string]$Url) @{ tool = 'fairlead'; pid = $script:probePid; path = 'C:\Other\app.exe' } }
+            Clear-SnapShackleFairleadIdentityCache
+            $bad = Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776'
+            Assert-True ($bad.code -eq 'not-fairlead') 'wrong path'
+            $script:SnapShackleProcessReader = { param([int]$ProcessId) @{ ExecutablePath = 'C:\Other\note.exe'; ScriptPath = '' } }
+            $script:SnapShackleIdReader = { param([string]$Url) @{ tool = 'fairlead'; pid = $script:probePid; path = '' } }
+            Clear-SnapShackleFairleadIdentityCache
+            $bad = Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776'
+            Assert-True ($bad.code -eq 'not-fairlead') 'no path and not Fairlead''s program'
+            $script:SnapShackleListenerReader = { param([int]$Port) @(1, 2) }
+            Clear-SnapShackleFairleadIdentityCache
+            $bad = Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776'
+            Assert-True ($bad.code -eq 'not-fairlead') 'two listeners'
+            $script:SnapShackleListenerReader = { param([int]$Port) @() }
+            Clear-SnapShackleFairleadIdentityCache
+            $bad = Test-SnapShackleFairleadIdentity 'http://127.0.0.1:9'
+            Assert-True ($bad.code -eq 'down') 'nothing listening'
+            $script:SnapShackleListenerReader = { param([int]$Port) @($script:probePid) }
+            $script:SnapShackleProcessReader = { param([int]$ProcessId) @{ ExecutablePath = 'C:\Fairlead\Fairlead.exe'; ScriptPath = '' } }
+            $script:SnapShackleIdReader = { param([string]$Url) @{ tool = 'fairlead'; pid = $script:probePid; path = 'C:\Fairlead\Fairlead.exe' } }
+            Clear-SnapShackleFairleadIdentityCache
+            Assert-True ($null -eq (Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776')) 'a matching id is Fairlead'
+            $script:SnapShackleIdReader = { param([string]$Url) throw 'the id was requested again' }
+            Assert-True ($null -eq (Test-SnapShackleFairleadIdentity 'http://127.0.0.1:8776')) 'a verified process is remembered'
+            $script:SnapShackleListenerReader = { param([int]$Port) @() }
+            Clear-SnapShackleFairleadIdentityCache
+            $before = $script:fairleadStarts
+            $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+            Assert-True ($script:fairleadStarts -eq ($before + 1) -and $msg -eq 'Fairlead was not started in this test.') ('start: ' + $script:fairleadStarts + ' ' + $msg)
+            [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', 'http://127.0.0.1:9')
+            $before = $script:fairleadStarts
+            $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+            Assert-True ($script:fairleadStarts -eq $before -and $msg -like '*did not answer*') ('other port: ' + $msg)
+            [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $null)
+        } finally { Use-RealFairleadProbe }
+    }
+    Test-Case 'a verified router receives the key only on the chat request' {
+        Use-RealFairleadProbe
+        $port = Get-FreePort; $log = Join-Path $work 'id-ok.log'
+        $procs += Start-FakeRouter $port $log 'ok' 'ok'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+        $answer = Invoke-SnapShackleAltText $png $on
+        $rows = @(Read-RouterLog $log)
+        Assert-True ($answer.text -like '*Quarterly report*') ('alt text: ' + $answer.text)
+        Assert-True ($rows.Count -ge 2 -and $rows[0].path -eq '/__fleethacker/id' -and -not $rows[0].authorization) ('id row: ' + ($rows[0] | ConvertTo-Json -Compress))
+        Assert-True ($rows[-1].path -eq '/v1/chat/completions' -and $rows[-1].authorization -eq 'Bearer fl-synthetic-key' -and $rows[-1].label -eq 'SnapShackle') ('chat row: ' + ($rows[-1] | ConvertTo-Json -Compress))
+        Reset-Env
+    }
+    Test-Case 'a program that is not Fairlead is never sent the key' {
+        Use-RealFairleadProbe
+        $port = Get-FreePort; $log = Join-Path $work 'id-bad.log'
+        $procs += Start-FakeRouter $port $log 'ok' 'wrong-tool'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        $rows = @(Read-RouterLog $log)
+        Assert-True ($msg -like '*key was not sent*' -and -not $msg.Contains('fl-synthetic-key')) ('refused id: ' + $msg)
+        Assert-True ($rows.Count -eq 1 -and $rows[0].path -eq '/__fleethacker/id' -and -not $rows[0].authorization) ('only the id was called: ' + $rows.Count)
+        Reset-Env
+    }
     Test-Case 'a refused key and a router that is not running give plain errors' {
+        Use-RealFairleadProbe
         $port = Get-FreePort; $log = Join-Path $work 'refuse.log'
         $procs += Start-FakeRouter $port $log 'refuse'
         [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
