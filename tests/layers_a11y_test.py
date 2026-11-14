@@ -5,9 +5,9 @@ live region, and that keyboard focus stays on the layer you chose when the list 
 Usage: python tests/layers_a11y_test.py
 """
 import os
-import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from studio_page import read_studio_document
 
 ROOT = Path(__file__).resolve().parents[1]
 MOCK = r"""() => {
@@ -31,11 +31,7 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={'width': 1440, 'height': 950})
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
-    html = (ROOT / 'index.html').read_text(encoding='utf-8')
-    scripts = re.findall(r'<script[^>]*src="/assets/([a-z]+)\.js"', html)
-    styles = re.findall(r'<link rel="stylesheet" href="/(assets/[a-z/]+\.css)"', html)
-    html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
-    html = re.sub(r'<link[^>]*stylesheet[^>]*>', '', html)
+    html, scripts, styles = read_studio_document(ROOT)
     page.set_content(html)
     for sheet in styles:
         page.add_style_tag(path=str(ROOT / sheet))

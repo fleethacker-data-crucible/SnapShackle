@@ -6,9 +6,9 @@ Usage: python tests/voice_browser_test.py   (Playwright; SNAPSHACKLE_CHROMIUM ma
 """
 import json
 import os
-import re
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from studio_page import read_studio_document
 
 ROOT = Path(__file__).resolve().parents[1]
 ARGS = ['--no-sandbox', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
@@ -41,11 +41,7 @@ with sync_playwright() as p:
     page = context.new_page()
     errors = []
     page.on('pageerror', lambda e: errors.append(str(e)))
-    html = (ROOT / 'index.html').read_text(encoding='utf-8')
-    scripts = re.findall(r'<script[^>]*src="/assets/([a-z]+)\.js"', html)
-    styles = re.findall(r'<link rel="stylesheet" href="/(assets/[a-z/]+\.css)"', html)
-    html = re.sub(r'<script[^>]*src="[^"]+"[^>]*></script>', '', html)
-    html = re.sub(r'<link[^>]*stylesheet[^>]*>', '', html)
+    html, scripts, styles = read_studio_document(ROOT)
     # A secure origin is needed for getUserMedia; serve the page from http://localhost.
     context.route('http://localhost/studio', lambda route: route.fulfill(status=200, content_type='text/html', body=html))
     page.goto('http://localhost/studio')
