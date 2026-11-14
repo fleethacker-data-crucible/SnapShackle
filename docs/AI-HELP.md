@@ -17,7 +17,7 @@ Optional and off by default. It adds two things for the open image: **Describe i
 | `aiPrivacy` (setting) | `local` or `any` | `local` |
 | `SNAPSHACKLE_FAIRLEAD_URL` | Router address. Only `http://127.0.0.1:<port>`, `localhost` or `[::1]` is accepted | `http://127.0.0.1:8776` |
 
-The key is read only from Windows Credential Manager: the generic credential `Fairlead/SnapShackle`, which Fairlead writes when you install a key for the app. There is no environment variable or vault item for it. With no key installed, a call stops with "Open Fairlead and install a key for SnapShackle." The key is held in memory only: never in settings, files, logs, API answers or the page. (`SNAPSHACKLE_FAIRLEAD_TARGET` exists for tests; it can only name another `Fairlead/SnapShackle-<name>` credential.)
+The key is the generic credential `Fairlead/SnapShackle` when Fairlead has installed one. Otherwise SnapShackle reads the first line of `%LOCALAPPDATA%\Fairlead\local-token`, the token Fairlead makes for this Windows account. There is no environment variable and no vault item for it. With neither, a call stops with "Open Fairlead and install a key for SnapShackle." Before any key is sent, SnapShackle checks `GET /__fleethacker/id`: the answer must name `fairlead`, its pid must be the program listening on that port, and its path must be that program's executable or `-File` script. Nothing listening is started with FleetPort's `Start-FleetService -Name fairlead` (the module next to SnapShackle or in `Projects\edge-ops`), then SnapShackle waits. The key is held in memory only: never in settings, files SnapShackle writes, logs, API answers or the page. (`SNAPSHACKLE_FAIRLEAD_TARGET` exists for tests; it can only name another `Fairlead/SnapShackle-<name>` credential.)
 
 ## What leaves the host
 
@@ -29,4 +29,4 @@ Only the PNG (scaled), a fixed instruction, and (for suggestions) the OCR text, 
 
 ## Tests
 
-`tests/ai_router_test.ps1` runs against `tests/fake_router.ps1` (no real router, no network): address rules, the key read from Credential Manager, suggestion clean-up, a refused key, a router that is down, off by default, headers and image reaching the router, the key kept out of settings, files and answers. `tests/aisuggest_test.js` and `tests/ai_ui_test.py` cover the panel. A live check against a real Fairlead is not part of the automated tests.
+`tests/ai_router_test.ps1` runs against `tests/fake_router.ps1` (no real router, no network): address rules, the key read from Credential Manager and then the local token, the identity check before the key is sent, starting Fairlead when the port is closed, suggestion clean-up, a refused key, a router that is down, off by default, headers and image reaching the router, the key kept out of settings, files and answers. `tests/aisuggest_test.js` and `tests/ai_ui_test.py` cover the panel. A live check against a real Fairlead is not part of the automated tests.
