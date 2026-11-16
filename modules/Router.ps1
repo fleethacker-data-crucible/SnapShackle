@@ -309,7 +309,6 @@ function Find-SnapShackleFleetPortModule {
         $dir = $start
         for ($i = 0; $i -lt 3 -and $dir; $i++) {
             $found.Add((Join-Path $dir 'edge-ops\tools\fleet-port\FleetPort.psm1'))
-            $found.Add((Join-Path $dir 'tools\fleet-port\FleetPort.psm1'))
             $dir = Split-Path -Parent $dir
         }
     }
@@ -372,7 +371,8 @@ function Invoke-SnapShackleRouterChat([string]$Model, $Messages, $Settings, [int
     if (-not $key.key) { throw $script:SnapShackleMissingKeyMessage }
     $payload = ConvertTo-Json -InputObject ([ordered]@{ model = $Model; messages = $Messages; max_tokens = $MaxTokens; temperature = 0.2; stream = $false }) -Depth 12 -Compress
     $request = [Net.HttpWebRequest]::Create($base + '/v1/chat/completions')
-    $request.Method = 'POST'; $request.Proxy = $null; $request.Timeout = $TimeoutMs; $request.ReadWriteTimeout = $TimeoutMs
+    $request.Method = 'POST'; $request.Proxy = $null; $request.AllowAutoRedirect = $false
+    $request.Timeout = $TimeoutMs; $request.ReadWriteTimeout = $TimeoutMs
     $request.KeepAlive = $false; $request.ServicePoint.Expect100Continue = $false; $request.ContentType = 'application/json'
     $request.UserAgent = 'SnapShackle'
     $request.Headers.Add('Authorization', 'Bearer ' + $key.key)
@@ -387,8 +387,13 @@ function Invoke-SnapShackleRouterChat([string]$Model, $Messages, $Settings, [int
         $failed = $_.Exception.Response
         if ($null -eq $failed) { throw 'The router did not answer.' }
         $code = [int]$failed.StatusCode; $failed.Close()
+        if ($code -ge 300 -and $code -lt 400) { throw 'The router sent a redirect, so the screenshot was not sent on.' }
         if ($code -eq 401 -or $code -eq 403) { throw 'The router refused the key. Open Fairlead and install a new key for SnapShackle.' }
         throw ('The router answered with an error (' + $code + ').')
+    }
+    if ([int]$response.StatusCode -ge 300 -and [int]$response.StatusCode -lt 400) {
+        $response.Close()
+        throw 'The router sent a redirect, so the screenshot was not sent on.'
     }
     try {
         $reader = [IO.StreamReader]::new($response.GetResponseStream(), [Text.Encoding]::UTF8)

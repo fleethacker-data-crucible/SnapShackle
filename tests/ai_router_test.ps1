@@ -46,10 +46,11 @@ $g.DrawString('Quarterly report', [Drawing.Font]::new('Arial', 20, [Drawing.Font
 $ms = [IO.MemoryStream]::new(); $bmp.Save($ms, [Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose(); $png = $ms.ToArray(); $ms.Dispose()
 $on = [pscustomobject]@{ aiSuggest = 'on'; aiPrivacy = 'local' }
 
-function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok', [string]$IdTool = 'fairlead', [int]$IdPid = 0, [string]$IdPath = '') {
+function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok', [string]$IdTool = 'fairlead', [int]$IdPid = 0, [string]$IdPath = '', [string]$RedirectTo = '') {
     $psi = [Diagnostics.ProcessStartInfo]::new($psExe)
     $arguments = '-NoProfile -NoLogo -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tests\fake_router.ps1') + '" -Port ' + $Port + ' -Log "' + $Log + '" -Mode ' + $Mode + ' -IdTool ' + $IdTool + ' -IdPid ' + $IdPid
     if ($IdPath) { $arguments += ' -IdPath "' + $IdPath + '"' }
+    if ($RedirectTo) { $arguments += ' -RedirectTo "' + $RedirectTo + '"' }
     $psi.Arguments = $arguments
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardError = $true
     $proc = [Diagnostics.Process]::Start($psi)
@@ -179,6 +180,25 @@ try {
         Assert-True ($msg -like '*are off*') ('off: ' + $msg)
         Reset-Env
         Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+    }
+    Test-Case 'a redirect is refused and the screenshot is not sent to the new address' {
+        $sinkPort = Get-FreePort; $sinkLog = Join-Path $work 'redirect-sink.log'
+        $script:extraProcs += Start-FakeRouter $sinkPort $sinkLog 'ok' -IdPid $script:idPid -IdPath $script:idScript
+        $port = Get-FreePort; $log = Join-Path $work 'redirect.log'
+        $script:extraProcs += Start-FakeRouter $port $log 'redirect' -IdPid $script:idPid -IdPath $script:idScript -RedirectTo ("http://127.0.0.1:" + $sinkPort + '/v1/chat/completions')
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        Reset-Env
+        Assert-True ($msg -like '*redirect*' -and $msg -like '*not sent on*' -and -not $msg.Contains('fl-synthetic-key') -and -not $msg.Contains([string]$sinkPort)) ('redirect: ' + $msg)
+        $seen = @([IO.File]::ReadAllLines($log) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+        Assert-True ($seen.Count -eq 2 -and $seen[0].path -eq '/__fleethacker/id' -and $seen[1].path -eq '/v1/chat/completions') 'the chat was offered once'
+        $followed = $false
+        if ([IO.File]::Exists($sinkLog)) {
+            foreach ($row in @([IO.File]::ReadAllLines($sinkLog) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })) {
+                if ($row.authorization) { $followed = $true }
+            }
+        }
+        Assert-True (-not $followed) 'the redirect was followed'
     }
     Test-Case 'the key is not sent when the id is the wrong tool, the wrong pid, or the wrong path' {
         $port = Get-FreePort; $log = Join-Path $work 'id.log'

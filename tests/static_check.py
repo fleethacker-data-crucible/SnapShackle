@@ -118,6 +118,8 @@ assert "aiSuggest = 'off'" in library and "'/api/ai/alt-text'" in host and 'modu
 assert 'id="aiSuggest"' in ui and 'for="aiSuggest"' in ui and 'aria-describedby="aiSuggestHelp"' in ui and 'src="/assets/aisuggest.js"' in ui
 assert 'fetch(' not in (ROOT/'assets/aisuggest.js').read_text(encoding='utf-8') and '/v1/chat' not in studio, 'the page never calls the router; the host does'
 assert "only talks to a router on this computer" in router and 'X-Fairlead-Privacy' in router and 'X-Fairlead-Label' in router and 'Fairlead/SnapShackle' in router and 'local-token' in router and '/__fleethacker/id' in router and 'Start-FleetService' in router and 'ROUTER_KEY' not in router and 'SNAPSHACKLE_FAIRLEAD_KEY' not in router, 'router calls stay on this computer, check Fairlead before sending the key, and do not take that key from an environment variable'
+assert router.count('AllowAutoRedirect = $false') >= 2 and 'sent a redirect' in router, 'the chat request must not follow a redirect'
+assert "Join-Path $dir 'tools\\fleet-port\\FleetPort.psm1'" not in router, 'FleetPort is only imported from an edge-ops tree'
 assert 'ROUTER_KEY' not in studio and 'ROUTER_KEY' not in library and 'routerKey' not in library, 'the router key must not be a setting or reach the page'
 print('PASS: AI help is off by default, host-side only, loopback-only and keeps the router key out of settings and the page')
 assert all('id="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')) and all('for="%s"' % i in ui for i in ('layerX', 'layerY', 'layerW', 'layerH')), 'numeric layer fields need labels'

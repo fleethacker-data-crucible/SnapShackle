@@ -21,7 +21,7 @@ The key is the generic credential `Fairlead/SnapShackle` when Fairlead has insta
 
 ## What leaves the host
 
-Only the PNG (scaled), a fixed instruction, and (for suggestions) the OCR text, and only to the router address above. An error from the router is shown in plain words; the key is never part of one.
+Only the PNG (scaled), a fixed instruction, and (for suggestions) the OCR text, and only to the router address above. A redirect from that address is refused: the screenshot and the key are not sent to the new place. An error from the router is shown in plain words; the key is never part of one.
 
 ## Command line
 
