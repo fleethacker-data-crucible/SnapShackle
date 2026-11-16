@@ -1,7 +1,8 @@
 <#
   Tests the optional AI help (alt text and annotation suggestions) against a fake router, never a real one.
   Part 1 runs modules/Router.ps1 in this process: the router address rules, how the client key is read (Windows Credential Manager,
-  through a replaceable reader), the clean-up of the model's suggestions, a refused key and a router that is not running.
+  then Fairlead's local token, through a replaceable reader), the identity check before the key is sent, starting Fairlead
+  when the port is closed, the clean-up of the model's suggestions, a refused key and a router that is not running.
   Part 2 starts a real SnapShackle host (no tray, no browser, temporary data folder) pointed at tests/fake_router.ps1
   and checks the routes: off by default, the right headers and image reach the router, and the key is never shown,
   saved or logged. Images are synthetic; nothing leaves this computer.
@@ -25,18 +26,32 @@ function Test-Case([string]$Name, [scriptblock]$Body) {
 function Assert-True($Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Get-FreePort { $p = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $p.Start(); $n = $p.LocalEndpoint.Port; $p.Stop(); return $n }
 $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if (-not ($psExe -and (Test-Path -LiteralPath $psExe))) { $psExe = [Diagnostics.Process]::GetCurrentProcess().Path }
 
 . (Join-Path $root 'modules\Ocr.ps1')
 . (Join-Path $root 'modules\Router.ps1')
+# Never read a real local token, and never start a real Fairlead, from this process.
+$script:SnapShackleLocalTokenPath = Join-Path $work 'no-such-local-token'
+$script:startedPorts = @()
+$script:SnapShackleFairleadStarter = { param([int]$Port) $script:startedPorts += $Port; return @{ State = 'unavailable'; Message = 'Fairlead is not running, and this test does not start it. The key was not sent.' } }
+$script:idPid = 42
+$script:idExe = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+$script:idScript = 'C:\Fairlead\scripts\Start-Fairlead.ps1'
+$script:SnapShackleListenerLookup = { param($Port) @($script:idPid) }
+$script:SnapShackleProcessLookup = { param($ProcessId) @{ ExecutablePath = [string]$script:idExe; ScriptPath = [string]$script:idScript } }
+$script:extraProcs = @()
 
 $bmp = [Drawing.Bitmap]::new(320, 200); $g = [Drawing.Graphics]::FromImage($bmp); $g.Clear([Drawing.Color]::White)
 $g.DrawString('Quarterly report', [Drawing.Font]::new('Arial', 20, [Drawing.FontStyle]::Regular, [Drawing.GraphicsUnit]::Pixel), [Drawing.Brushes]::Black, 10, 10); $g.Dispose()
 $ms = [IO.MemoryStream]::new(); $bmp.Save($ms, [Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose(); $png = $ms.ToArray(); $ms.Dispose()
 $on = [pscustomobject]@{ aiSuggest = 'on'; aiPrivacy = 'local' }
 
-function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok') {
+function Start-FakeRouter([int]$Port, [string]$Log, [string]$Mode = 'ok', [string]$IdTool = 'fairlead', [int]$IdPid = 0, [string]$IdPath = '', [string]$RedirectTo = '') {
     $psi = [Diagnostics.ProcessStartInfo]::new($psExe)
-    $psi.Arguments = '-NoProfile -NoLogo -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tests\fake_router.ps1') + '" -Port ' + $Port + ' -Log "' + $Log + '" -Mode ' + $Mode
+    $arguments = '-NoProfile -NoLogo -ExecutionPolicy Bypass -File "' + (Join-Path $root 'tests\fake_router.ps1') + '" -Port ' + $Port + ' -Log "' + $Log + '" -Mode ' + $Mode + ' -IdTool ' + $IdTool + ' -IdPid ' + $IdPid
+    if ($IdPath) { $arguments += ' -IdPath "' + $IdPath + '"' }
+    if ($RedirectTo) { $arguments += ' -RedirectTo "' + $RedirectTo + '"' }
+    $psi.Arguments = $arguments
     $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardError = $true
     $proc = [Diagnostics.Process]::Start($psi)
     for ($i = 0; $i -lt 60; $i++) {
@@ -70,7 +85,7 @@ try {
         }
         [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $null)
     }
-    Test-Case 'the client key is read only from Windows Credential Manager (Fairlead/SnapShackle), else none with a plain note' {
+    Test-Case 'the client key is the Fairlead/SnapShackle credential, else the local token, else none, and never an environment variable' {
         $script:asked = @()
         Set-SnapShackleCredentialReader { param([string]$Target) $script:asked += $Target; 'fl-from-store' }
         $k = Resolve-SnapShackleRouterKey
@@ -92,12 +107,46 @@ try {
         Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([Text.Encoding]::Unicode.GetBytes('fl-abc123'))) -eq 'fl-abc123') 'a UTF-16 key is decoded'
         Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([Text.Encoding]::UTF8.GetBytes('fl-abc123'))) -eq 'fl-abc123') 'a UTF-8 key is decoded'
         Assert-True ((ConvertFrom-SnapShackleCredentialBlob ([byte[]]@(1, 2, 3, 4, 5))) -eq '' -and (ConvertFrom-SnapShackleCredentialBlob ([byte[]]@())) -eq '' -and (ConvertFrom-SnapShackleCredentialBlob $null) -eq '') 'unprintable, empty or no blob is not a key'
-    }
-    Test-Case 'a call with no key installed stops before any request and says what to do' {
+        $token = Join-Path $work 'local-token'
+        [IO.File]::WriteAllText($token, "fl-localtoken-1`r`nignored")
+        $script:SnapShackleLocalTokenPath = $token
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-from-store' }
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'credential-manager' -and $k.key -eq 'fl-from-store') 'the credential wins over the local token'
         Set-SnapShackleCredentialReader { param([string]$Target) $null }
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'local-token' -and $k.key -eq 'fl-localtoken-1') 'the local token is the fallback'
+        [IO.File]::WriteAllText($token, ([char]0xFEFF) + "fl-localtoken-2`n")
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'local-token' -and $k.key -eq 'fl-localtoken-2') 'a BOM and a second line are ignored'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_KEY', 'fl-from-environment')
+        [IO.File]::WriteAllText($token, 'not-a-fairlead-key')
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'none' -and $k.key -eq '' -and -not (($k | ConvertTo-Json -Compress).Contains('fl-from-environment'))) 'an environment variable and a bad token are not a key'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_KEY', $null)
+        [IO.File]::WriteAllText($token, ('x' * 5000))
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'none' -and $k.key -eq '') 'a token file over 4 KB is ignored'
+        Set-SnapShackleCredentialReader { param([string]$Target) throw 'credential store unavailable' }
+        [IO.File]::WriteAllText($token, 'fl-localtoken-3')
+        $k = Resolve-SnapShackleRouterKey
+        Assert-True ($k.source -eq 'local-token' -and $k.key -eq 'fl-localtoken-3' -and -not (($k | ConvertTo-Json -Compress).Contains('unavailable'))) 'a store error falls through to the local token'
+        $script:SnapShackleLocalTokenPath = Join-Path $work 'no-such-local-token'
+        Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+    }
+    Test-Case 'a call with no key installed stops before sending one and says what to do' {
+        Set-SnapShackleCredentialReader { param([string]$Target) $null }
+        $port = Get-FreePort; $log = Join-Path $work 'nokey.log'
+        $script:extraProcs += Start-FakeRouter $port $log 'ok' -IdPid $script:idPid -IdPath $script:idScript
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        $before = $script:startedPorts.Count
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
         Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', $null)
         Assert-True ($msg -eq 'Open Fairlead and install a key for SnapShackle.') ('no key: ' + $msg)
+        Assert-True ($script:startedPorts.Count -eq $before) 'a listening port was started again'
+        $seen = @([IO.File]::ReadAllLines($log) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+        Assert-True ($seen.Count -eq 1 -and $seen[0].path -eq '/__fleethacker/id' -and $seen[0].authorization -eq '') 'the id check carries no key, and the chat was not sent'
     }
     Test-Case 'suggestions are cleaned: known kinds only, clamped into the image, bad numbers dropped, capped' {
         $text = 'Sure: [{"kind":"redact","x":0.1,"y":0.2,"w":0.3,"h":0.1,"label":"email"},{"kind":"explode","x":0,"y":0,"w":1,"h":1},{"kind":"box","x":0.9,"y":0.9,"w":0.9,"h":0.9,"label":"big"},{"kind":"box","x":"nope","y":0,"w":0.1,"h":0.1},{"kind":"arrow","x":-3,"y":0,"w":0.0001,"h":0.5}] ok'
@@ -111,21 +160,130 @@ try {
         $long = '[{"kind":"text","x":0.1,"y":0.1,"w":0.1,"h":0.1,"label":"' + ('z' * 200) + '"}]'
         Assert-True (@(ConvertFrom-SnapShackleSuggestions $long)[0].label.Length -eq 80) 'label not cut to 80'
     }
-    Test-Case 'a refused key and a router that is not running give plain errors' {
+    Test-Case 'a refused key and a router that is not running give plain errors, and the key waits for the id check' {
         $port = Get-FreePort; $log = Join-Path $work 'refuse.log'
-        $procs += Start-FakeRouter $port $log 'refuse'
+        $router = Start-FakeRouter $port $log 'refuse' -IdPid $script:idPid -IdPath $script:idScript
+        $script:extraProcs += $router
         [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
         Set-SnapShackleCredentialReader { param([string]$Target) 'fl-wrong' }
+        $before = $script:startedPorts.Count
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
         Assert-True ($msg -like '*refused the key*' -and -not $msg.Contains('fl-wrong')) ('refused: ' + $msg)
-        $procs[-1].Kill(); [void]$procs[-1].WaitForExit(3000)
+        Assert-True ($script:startedPorts.Count -eq $before) 'Fairlead was started while a router was already listening'
+        $seen = @([IO.File]::ReadAllLines($log) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+        Assert-True ($seen.Count -eq 2 -and $seen[0].path -eq '/__fleethacker/id' -and $seen[0].authorization -eq '' -and $seen[1].authorization -eq 'Bearer fl-wrong') 'the key is sent only on the chat, after the id check'
+        $router.Kill(); [void]$router.WaitForExit(3000)
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
-        Assert-True ($msg -like '*did not answer*') ('down: ' + $msg)
+        Assert-True ($msg -like '*this test does not start it*' -and $script:startedPorts[-1] -eq $port) ('down: ' + $msg)
         $off = [pscustomobject]@{ aiSuggest = 'off' }
         $msg = ''; try { [void](Invoke-SnapShackleAltText $png $off) } catch { $msg = $_.Exception.Message }
         Assert-True ($msg -like '*are off*') ('off: ' + $msg)
         Reset-Env
         Set-SnapShackleCredentialReader { param([string]$Target) 'fl-synthetic-key' }
+    }
+    Test-Case 'a redirect is refused and the screenshot is not sent to the new address' {
+        $sinkPort = Get-FreePort; $sinkLog = Join-Path $work 'redirect-sink.log'
+        $script:extraProcs += Start-FakeRouter $sinkPort $sinkLog 'ok' -IdPid $script:idPid -IdPath $script:idScript
+        $port = Get-FreePort; $log = Join-Path $work 'redirect.log'
+        $script:extraProcs += Start-FakeRouter $port $log 'redirect' -IdPid $script:idPid -IdPath $script:idScript -RedirectTo ("http://127.0.0.1:" + $sinkPort + '/v1/chat/completions')
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        Reset-Env
+        Assert-True ($msg -like '*redirect*' -and $msg -like '*not sent on*' -and -not $msg.Contains('fl-synthetic-key') -and -not $msg.Contains([string]$sinkPort)) ('redirect: ' + $msg)
+        $seen = @([IO.File]::ReadAllLines($log) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+        Assert-True ($seen.Count -eq 2 -and $seen[0].path -eq '/__fleethacker/id' -and $seen[1].path -eq '/v1/chat/completions') 'the chat was offered once'
+        $followed = $false
+        if ([IO.File]::Exists($sinkLog)) {
+            foreach ($row in @([IO.File]::ReadAllLines($sinkLog) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })) {
+                if ($row.authorization) { $followed = $true }
+            }
+        }
+        Assert-True (-not $followed) 'the redirect was followed'
+    }
+    Test-Case 'the key is not sent when the id is the wrong tool, the wrong pid, or the wrong path' {
+        $port = Get-FreePort; $log = Join-Path $work 'id.log'
+        $router = Start-FakeRouter $port $log 'ok' -IdTool 'other' -IdPid $script:idPid -IdPath $script:idScript
+        $script:extraProcs += $router
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        Assert-True ($msg -like '*not Fairlead*' -and $msg -like '*not sent*') ('tool: ' + $msg)
+        $router.Kill(); [void]$router.WaitForExit(3000)
+        $log2 = Join-Path $work 'id-pid.log'
+        $router = Start-FakeRouter $port $log2 'ok' -IdPid 99 -IdPath $script:idScript
+        $script:extraProcs += $router
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        Assert-True ($msg -like '*not the one that answered*' -and $msg -like '*not sent*') ('pid: ' + $msg)
+        $router.Kill(); [void]$router.WaitForExit(3000)
+        $log3 = Join-Path $work 'id-path.log'
+        $router = Start-FakeRouter $port $log3 'ok' -IdPid $script:idPid -IdPath 'C:\Other\Start-Fairlead.ps1'
+        $script:extraProcs += $router
+        $msg = ''; try { [void](Invoke-SnapShackleAltText $png $on) } catch { $msg = $_.Exception.Message }
+        Assert-True ($msg -like '*path*' -and $msg -like '*not sent*') ('path: ' + $msg)
+        foreach ($file in @($log, $log2, $log3)) {
+            foreach ($row in @([IO.File]::ReadAllLines($file) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })) {
+                Assert-True ($row.authorization -eq '') ('a rejected id still received the key: ' + $row.path)
+            }
+        }
+        $router.Kill(); [void]$router.WaitForExit(3000)
+        Reset-Env
+    }
+    Test-Case 'nothing listening asks Start-FleetService for that port, then sends the key only after the id check' {
+        $port = Get-FreePort; $log = Join-Path $work 'autostart.log'
+        [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+        $script:startedPorts = @()
+        $script:SnapShackleFairleadStarter = {
+            param([int]$Port)
+            $script:startedPorts += $Port
+            $script:extraProcs += Start-FakeRouter $Port $log 'ok' -IdPid $script:idPid -IdPath $script:idScript
+            return @{ State = 'running'; Message = '' }
+        }
+        try {
+            $answer = Invoke-SnapShackleAltText $png $on
+            Assert-True ($script:startedPorts.Count -eq 1 -and $script:startedPorts[0] -eq $port) 'the starter was not asked for this port'
+            Assert-True ($answer.text -like '*Quarterly report*') 'alt text after start'
+            $seen = @([IO.File]::ReadAllLines($log) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+            Assert-True ($seen.Count -eq 2 -and $seen[0].path -eq '/__fleethacker/id' -and $seen[0].authorization -eq '' -and $seen[1].path -eq '/v1/chat/completions' -and $seen[1].label -eq 'SnapShackle' -and $seen[1].authorization -eq 'Bearer fl-synthetic-key') 'order after start'
+        } finally {
+            $script:SnapShackleFairleadStarter = { param([int]$Port) $script:startedPorts += $Port; return @{ State = 'unavailable'; Message = 'Fairlead is not running, and this test does not start it. The key was not sent.' } }
+            Reset-Env
+        }
+    }
+    Test-Case 'on Windows a live fake router passes only when its pid owns the port and its path is its script' {
+        if ([Environment]::OSVersion.Platform -ne 'Win32NT') { return }
+        $savedLookup = $script:SnapShackleListenerLookup
+        $savedPaths = $script:SnapShackleProcessLookup
+        $script:SnapShackleListenerLookup = $null
+        $script:SnapShackleProcessLookup = $null
+        $port = Get-FreePort; $log = Join-Path $work 'live-id.log'
+        try {
+            $script:extraProcs += Start-FakeRouter $port $log 'ok'
+            [Environment]::SetEnvironmentVariable('SNAPSHACKLE_FAIRLEAD_URL', "http://127.0.0.1:$port")
+            $answer = Invoke-SnapShackleAltText $png $on
+            Assert-True ($answer.text -like '*Quarterly report*') 'live identity'
+        } finally {
+            $script:SnapShackleListenerLookup = $savedLookup
+            $script:SnapShackleProcessLookup = $savedPaths
+            Reset-Env
+        }
+    }
+    Test-Case 'a path matches the executable or the -File script exactly, and not a longer path' {
+        Assert-True (Test-SnapShackleProcessPath -ProcessId 42 -Path 'C:\Fairlead\scripts\Start-Fairlead.ps1') 'script path'
+        Assert-True (Test-SnapShackleProcessPath -ProcessId 42 -Path 'c:\windows\system32\windowspowershell\v1.0\powershell.exe') 'executable, ignoring case'
+        Assert-True (-not (Test-SnapShackleProcessPath -ProcessId 42 -Path 'C:\Fairlead\scripts\Start-Fairlead.ps1\extra')) 'a longer path'
+        Assert-True (-not (Test-SnapShackleProcessPath -ProcessId 42 -Path 'Start-Fairlead.ps1')) 'a bare name'
+        Assert-True (-not (Test-SnapShackleProcessPath -ProcessId 42 -Path 'C:\Other\scripts\Start-Fairlead.ps1')) 'a different folder'
+        $saved = $script:SnapShackleListenerLookup
+        $script:SnapShackleListenerLookup = { param($Port) @(1, 2) }
+        $many = Test-SnapShackleFairleadIdentity -BaseUrl 'http://127.0.0.1:9'
+        $script:SnapShackleListenerLookup = $saved
+        Assert-True ($many -like '*Something other than Fairlead*') 'two listeners'
+    }
+
+    # Part 2 needs Windows (Credential Manager, the STA host). Part 1 already ran.
+    if ([Environment]::OSVersion.Platform -ne 'Win32NT') {
+        if ($script:failures -gt 0) { Write-Failure "$($script:failures) AI router test(s) failed"; exit 1 }
+        Write-Host 'Part 1 passed. The host half of this file runs on Windows.'
+        exit 0
     }
 
     # Part 2: a real host pointed at the fake router. The host is a separate process, so the key goes in a throwaway
@@ -178,7 +336,9 @@ try {
         Assert-True ($set.Status -eq 200 -and $set.Json.aiSuggest -eq 'on') ('settings: ' + $set.Text)
         $r = Invoke-Api 'POST' '/api/ai/alt-text' $null $token $png 'image/png'
         Assert-True ($r.Status -eq 200 -and $r.Json.text -like '*Quarterly report*' -and $r.Json.route -eq 'smart' -and $r.Json.target -eq 'fake/vision-1') ('alt text: ' + $r.Text)
-        $seen = @(Get-RouterLog)[-1]
+        $seenAll = @(Get-RouterLog)
+        $seen = $seenAll[-1]
+        Assert-True ($seenAll.Count -ge 2 -and $seenAll[-2].path -eq '/__fleethacker/id' -and $seenAll[-2].authorization -eq '') 'the id check carries no key'
         Assert-True ($seen.path -eq '/v1/chat/completions' -and $seen.authorization -eq 'Bearer fl-test-key-123' -and $seen.privacy -eq 'local' -and $seen.label -eq 'SnapShackle' -and $seen.hasImage -eq $true) ('what the router saw: ' + ($seen | ConvertTo-Json -Compress))
         Assert-True (-not $r.Text.Contains('fl-test-key-123')) 'the answer shows the key'
     }
@@ -211,7 +371,7 @@ try {
         Assert-True ((Invoke-Api 'GET' '/api/health' $null $token).Status -eq 200) 'the host stopped answering'
     }
 } finally {
-    foreach ($p in $procs) { try { if ($null -ne $p -and -not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(5000) } } catch {} }
+    foreach ($p in @($procs + $script:extraProcs)) { try { if ($null -ne $p -and -not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(5000) } } catch {} }
     Reset-Env
     if ($script:testTarget) { $null = & cmdkey.exe "/delete:$($script:testTarget)" 2>&1 }
     try { [IO.Directory]::Delete($work, $true) } catch {}
